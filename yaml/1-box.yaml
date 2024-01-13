@@ -1,0 +1,28 @@
+nodes:
+  Node1: [0, 0, 0]
+  Node2: [1, 0, 0]
+  Node3: [1, 1, 0]
+  Node4: [0, 1, 0]
+
+connections:
+  bar:
+    - [Node1, Node3]
+    - [Node2, Node4]
+
+  string:
+    - [Node1, Node2]
+    - [Node2, Node3]
+    - [Node3, Node4]
+    - [Node4, Node1]
+
+forces:
+  Node2: [1, 1, 0]
+
+pin:
+  - Node1
+
+builders:
+  string:
+    stiffness: 100
+    damping: 1
+    pretension: 100

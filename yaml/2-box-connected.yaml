@@ -1,0 +1,24 @@
+nodes:
+  Node1: [0, 0, 0]
+  Node2: [1, 0, 0]
+  Node3: [1, 1, 0]
+  Node4: [0, 1, 0]
+
+  Node5: [2, 0, 0]
+  Node6: [2, 1, 0]
+
+connections:
+  bar:
+    - [Node1, Node3]
+    - [Node2, Node4]
+
+    - [Node2, Node6]
+    - [Node3, Node5]
+
+  string:
+    - [Node1, Node2]
+    - [Node2, Node3]
+    - [Node1, Node4, Node3, Node6]
+    
+    - [Node2, Node5]
+    - [Node5, Node6]
