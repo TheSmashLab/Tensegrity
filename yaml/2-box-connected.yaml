@@ -22,3 +22,8 @@ connections:
     
     - [Node2, Node5]
     - [Node5, Node6]
+
+builders:
+  string:
+    stiffness: 100
+    pretension: 5

@@ -36,7 +36,11 @@ class yaml_parser:
             Tuple[List[Node], List[Connection]]: A tuple containing a list of nodes and a list of connections.
         """
         with open(self.file, 'r') as stream:
-            data = yaml.safe_load(stream)
+            try:
+                data = yaml.safe_load(stream)
+            except yaml.YAMLError as exc:
+                print("Invalid YAML file.")
+                raise exc
 
             Nodes = {}
             for node in data["nodes"]:
@@ -44,8 +48,20 @@ class yaml_parser:
 
             Connections = []
             for connection_type in data["connections"]:
+                stiffness = 0
+                pretension = 0
+                # Get connection type info, for example "string" or "rod"
+                if connection_type in data["builders"]:
+                    pretension = data["builders"][connection_type]["pretension"]
+                    stiffness = data["builders"][connection_type]["stiffness"]
+                
+                # Create connections
                 for connection in data["connections"][connection_type]:
-                    Connections.append(Connection(connection_type, [Nodes[n_name] for n_name in connection]))
+                    if type(connection) == dict:
+                        for name, NodesList in connection.items():
+                            Connections.append(Connection([Nodes[n_name] for n_name in NodesList], connection_type, stiffness, pretension, name))
+                    else:
+                        Connections.append(Connection([Nodes[n_name] for n_name in connection], connection_type, stiffness, pretension))
             
         return list(Nodes.values()), Connections
         

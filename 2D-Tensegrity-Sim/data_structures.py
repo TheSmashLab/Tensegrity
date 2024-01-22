@@ -29,6 +29,20 @@ class Connection:
         nodes (List[Node]): The nodes involved in the connection.
     """
 
-    def __init__(self, type: str, Nodes: List[Node]):
-        self.type = type
+    def __init__(self, Nodes: List[Node], type: str, stiffness: float = 0, pretension: float = 0, name: str = None):
         self.nodes = Nodes
+
+        self.type = type # just stored for debugging purposes
+        self.stiffness = stiffness
+        self.tension = pretension
+
+        self.length = 0
+        for i in range(len(self.nodes)-1):
+            self.length += np.linalg.norm(self.nodes[i].position - self.nodes[i+1].position)
+            
+        if self.stiffness != 0:
+            # Length is the distance between the nodes minus how much it is stretched
+            # F = kx  ->  x = F/k
+            self.length -= pretension/stiffness
+        
+        self.name = name 

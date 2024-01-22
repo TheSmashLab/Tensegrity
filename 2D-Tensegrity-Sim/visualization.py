@@ -15,33 +15,56 @@ class Visualization:
 
         self.dim = dim
     
-    def plot(self):
-        """
-        Plots the visualization of the tensegrity structure.
-        """
-        if self.dim == 2:
-            self.plot_2d()
-        else:
-            raise NotImplementedError("3D visualization not implemented yet.")
-        
-    def plot_2d(self):
-        """
-        Plots the 2D visualization of the tensegrity structure.
-        """
-        fig, ax = plt.subplots()
-        ax.set_aspect('equal')
-        
-        for connection in self.Connections:
-            # TODO: Generalize beyond just bars and strings (or specific names)???
-            if connection.type == "bar":
-                ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], 'k-')
-            elif connection.type == "string":
-                if len(connection.nodes) == 2:
-                    ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], 'k--')
-                else:
-                    # Allow the color to change for each string connected through multiple nodes 
-                    ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], '--') 
+    def plot(self, label_nodes: bool = False, label_connections: bool = False):
+            """
+            Plots the visualization of the tensegrity structure.
+
+            Parameters:
+            - label_nodes (bool): Whether to label the nodes in the plot.
+
+            Raises:
+            - NotImplementedError: If the visualization is not implemented for 3D structures.
+            """
+            if self.dim == 2:
+                self.plot_2d(label_nodes, label_connections)
             else:
-                raise ValueError(f"Connection type {connection.type} not recognized.")
+                raise NotImplementedError("3D visualization not implemented yet.")
         
-        plt.show()
+    def plot_2d(self, label_nodes: bool = False, label_connections: bool = False):
+            """
+            Plots the 2D visualization of the tensegrity structure.
+
+            Parameters:
+            - label_nodes (bool): If True, labels the nodes on the plot.
+
+            Returns:
+            - None
+            """
+            fig, ax = plt.subplots()
+            ax.set_aspect('equal')
+            
+            for connection in self.Connections:
+                # Strings are dashed lines
+                if connection.stiffness > 0:
+                    if len(connection.nodes) == 2:
+                        ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], 'k--')
+                    else:
+                        # Allow the color to change for each string connected through multiple nodes 
+                        ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], '--') 
+                
+                # Bars are solid lines
+                elif connection.stiffness == 0:
+                    ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], 'k-')
+
+            # plot nodes and label
+                for node in self.Nodes:
+                    ax.plot(node.position[0], node.position[1], 'ko')
+                    if label_nodes:
+                        ax.annotate(node.name, (node.position[0], node.position[1]))
+                
+                if label_connections:
+                    for connection in self.Connections:
+                        if connection.name:
+                            ax.annotate(connection.name, ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
+                
+            plt.show()
