@@ -8,10 +8,18 @@ from optimization import Optimizer
 
 def main(file):
     parser = yaml_parser(file)
-    Nodes, Connections = parser.parse()
+    tensegrity_system = parser.parse()
     
-    viz = Viz(Nodes, Connections)
+    viz = Viz(tensegrity_system.Nodes, tensegrity_system.Connections)
+    # viz.plot(label_nodes=True, label_connections=True)
+
+    # opt = Optimizer(tensegrity_system.Nodes, tensegrity_system.Connections, d=2)
+    # tensegrity_system.change_connection_length("String1", -.2)
+    # opt.optimize()
+
     viz.plot(label_nodes=True, label_connections=True)
+
+    return
 
 
 

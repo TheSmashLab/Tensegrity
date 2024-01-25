@@ -45,4 +45,26 @@ class Connection:
             # F = kx  ->  x = F/k
             self.length -= pretension/stiffness
         
-        self.name = name 
+        self.name = name
+    
+
+class Tensegrity:
+    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: List[Node] = []):
+        self.Nodes = Nodes
+        self.Connections = Connections
+        self.Pins = Pins
+    
+    def change_connection_length(self, connection_name: str, delta: float):
+        """
+        Changes the length of a connection by a specified amount.
+
+        Args:
+            connection_name (str): The name of the connection to change.
+            delta (float): The amount to change the length by.
+        """
+        for connection in self.Connections:
+            if connection.name == connection_name:
+                connection.length += delta
+                return
+        raise ValueError("Connection name not found.")
+    

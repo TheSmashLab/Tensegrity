@@ -16,7 +16,7 @@ connections:
     - [Node1, Node3]
 
 pin:
-  - Node1 # pin one connection off of this node
+  - Node1 #TODO pin one connection off of this node???
 
 builders:
   string:

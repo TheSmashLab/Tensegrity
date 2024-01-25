@@ -2,7 +2,7 @@ import yaml
 from os.path import isfile
 from typing import List, Tuple
 
-from data_structures import Node, Connection
+from data_structures import Node, Connection, Tensegrity
 
 class yaml_parser:
     """
@@ -28,12 +28,12 @@ class yaml_parser:
                 
         self.file = file
 
-    def parse(self) -> Tuple[List[Node], List[Connection]]:
+    def parse(self) -> Tensegrity:
         """
         Parses the YAML file and returns a tuple containing a list of nodes and a list of connections.
 
         Returns:
-            Tuple[List[Node], List[Connection]]: A tuple containing a list of nodes and a list of connections.
+            Tensegrity: The tensegrity system containing Nodes and Connections.
         """
         with open(self.file, 'r') as stream:
             try:
@@ -63,5 +63,7 @@ class yaml_parser:
                     else:
                         Connections.append(Connection([Nodes[n_name] for n_name in connection], connection_type, stiffness, pretension))
             
-        return list(Nodes.values()), Connections
+            Pins = [Nodes[node] for node in data["pin"]]
+
+        return Tensegrity(list(Nodes.values()), Connections, Pins)
         
