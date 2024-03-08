@@ -1,8 +1,9 @@
+from numpy import inf
 import yaml
 from os.path import isfile
 from typing import List, Tuple
 
-from data_structures import Node, Connection, Tensegrity
+from data_structures import Node, Connection, Control, Tensegrity
 
 class yaml_parser:
     """
@@ -41,29 +42,59 @@ class yaml_parser:
             except yaml.YAMLError as exc:
                 print("Invalid YAML file.")
                 raise exc
-
-            Nodes = {}
+            
+            # TODO: make sure all floats are read in as floats, not strings (direction of [-.25, 0, 0] read in -.25 in as string)
+            
+            # --- Nodes ---
+            Nodes = {} # Dictionary to store nodes so I can find them by name, will convert to list later to create Tensegrity object
             for node in data["nodes"]:
                 Nodes[node] = (Node(node, data['nodes'][node]))
 
-            Connections = []
+
+            # --- Connections ---
+            Connections = [] # List to store connections used to create Tensegrity object
+            connection_names = {} # Dictionary to store named connections
+            
             for connection_type in data["connections"]:
-                stiffness = 0
-                pretension = 0
-                # Get connection type info, for example "string" or "rod"
+                
+                stiffness = 0 # Default stiffness
+                pretension = 0 # Default pretension
+                
+                # --- Builders ---
                 if connection_type in data["builders"]:
                     pretension = data["builders"][connection_type]["pretension"]
-                    stiffness = data["builders"][connection_type]["stiffness"]
+                    if data["builders"][connection_type]["stiffness"] == "inf": # TODO: how do we want to handle this? Needs to be implemented in solver if used
+                        stiffness = inf
+                    else:
+                        stiffness = float(data["builders"][connection_type]["stiffness"])
                 
                 # Create connections
                 for connection in data["connections"][connection_type]:
-                    if type(connection) == dict:
+                    if type(connection) == dict: # If the connection has a name
                         for name, NodesList in connection.items():
-                            Connections.append(Connection([Nodes[n_name] for n_name in NodesList], connection_type, stiffness, pretension, name))
+                            connection = Connection([Nodes[n_name] for n_name in NodesList], connection_type, stiffness, pretension, name)
+                            Connections.append(connection)
+                            connection_names[name] = connection
                     else:
                         Connections.append(Connection([Nodes[n_name] for n_name in connection], connection_type, stiffness, pretension))
             
-            Pins = [Nodes[node] for node in data["pin"]]
 
-        return Tensegrity(list(Nodes.values()), Connections, Pins)
+            # --- Pins ---
+            Pins = {}
+            if "pin" in data: # TODO: behavior, it is better to connect to the objects or should we just store the names?
+                # if "nodes" in data["pin"]: 
+                #     Pins["nodes"] = [Nodes[n] for n in data["pin"]["nodes"]] # List of node objects
+                # if "connections" in data["pin"]:
+                #     Pins["connections"] = [connection_names[c] for c in data["pin"]["connections"]] # List of connection objects
+                for pin in data["pin"]:
+                    Pins[pin] = data["pin"][pin]
+
+            # --- Control ---
+            Controls = []
+            if "control" in data: # TODO: behavior, it is better to connect to the objects or should we just store the names?
+                for name in data["control"]:
+                    node = Nodes[data["control"][name]["node"]] # Get node object
+                    Controls.append(Control(connection_names[name], node, data["control"][name]["direction"]))
+
+        return Tensegrity(list(Nodes.values()), Connections, Pins, Controls)
         

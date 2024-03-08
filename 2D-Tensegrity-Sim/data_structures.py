@@ -19,6 +19,9 @@ class Node:
 
     def __str__(self):
         return f"Node: {self.name}  Position: {self.position}"
+    
+    def copy(self):
+        return Node(self.name, self.position)
 
 class Connection:
     """
@@ -31,6 +34,9 @@ class Connection:
 
     def __init__(self, Nodes: List[Node], type: str, stiffness: float = 0, pretension: float = 0, name: str = None):
         self.nodes = Nodes
+
+        # store original positions of nodes, for pinned connections.
+        self.nodes_original = [node.copy() for node in Nodes]
 
         self.type = type # just stored for debugging purposes
         self.stiffness = stiffness
@@ -47,13 +53,31 @@ class Connection:
         
         self.name = name
     
+class Control:
+    """
+    Represents a control point in a tensegrity structure.
+
+    Attributes:
+        connection (Connection): The connection associated with the control point.
+        node (Node): The node associated with the control point.
+        direction (np.array): The direction the connection is pulled from the control point.
+
+    """
+
+    def __init__(self, connection: Connection, node: Node, direction: list):
+        self.connection = connection
+        self.node = node
+        self.direction = np.array(direction, dtype=float)
+    
 
 class Tensegrity:
-    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: List[Node] = []):
+    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: dict[str, List[bool]] = [], Controls: List[Control] = []):
         self.Nodes = Nodes
         self.Connections = Connections
         self.Pins = Pins
+        self.Controls = Controls
     
+    # TODO: Change method to use control strings instead of a named connections
     def change_connection_length(self, connection_name: str, delta: float):
         """
         Changes the length of a connection by a specified amount.

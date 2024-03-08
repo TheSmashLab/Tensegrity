@@ -16,9 +16,16 @@ connections:
     - [Node1, Node3]
 
 pin:
-  - Node1 #TODO pin one connection off of this node???
+  Node1: [True, True, False]
+  Node2: [False, True, False]
+
 
 builders:
   string:
     stiffness: 100
     pretension: 5
+
+control:
+  String1:
+    node: Node1
+    direction: [-0.25, 0, 0]

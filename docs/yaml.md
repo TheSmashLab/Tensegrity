@@ -2,8 +2,11 @@
 The config file is a YAML file defining:
 * [Nodes](#nodes)
 * [Connections](#connections)
-* [Pins](#pins) (optional)
 * [Builders](#builders) (optional)
+* [Pins](#pins)
+* [Control](#control) (optional)
+
+These sections can be defined in any order in the YAML file, but it is easiest to logically go through them in the order defined above
 
 ## Nodes
 Nodes are the points that bars and strings connect at.
@@ -37,7 +40,6 @@ connections:
         - [Node2, Node3] # Unnamed connection
 ```
 
-## Pins
 
 ## Builders
 Builders are the connection properties that define the strings or bars that hold the nodes together.
@@ -56,3 +58,11 @@ builders:
 If the tension is unknown but the unstretched length of the string is known, Hooke's Law can be used to calculate the initial tension: $F = k * (l_s - l)$ where $l_s$ is the stretched length of the string (distance between it's nodes) and $l$ is the unstretched length.
 
 If a connection type does not have a builder assigned to it, it is assumed to be a bar, which I define as a member being able to transfer force along its length, while not changing in length.
+
+
+## Pins
+In 2D space the solved structure can float anywhere in the XY plane with any rotation unless we pin a node (to define a place in XY space) and the direction of one of the connections from that node (to define the rotation)
+
+
+## Control
+The `control` section defines which wires have 

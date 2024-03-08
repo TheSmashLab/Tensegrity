@@ -1,12 +1,14 @@
 # 2D Tensegrity Sim
 
 ## About
-This repo contains code to create a simulation for 2D Tensegrity structures specifically taylored to the needs of the Elbow Brace Project.
+This repo contains code to create a simulation for 2D Tensegrity structures specifically tailored to the needs of the Elbow Brace Project.
 
 ## Getting started
-I reccommend using a venv to keep the libraries for this project seperate from the main python interpreter. To create a venv, from the project's main directory run `python3 -m venv ./venv`. Now everytome you want to use this venv run `source venv/bin/activate`. To deactivate simpy use the `deactivate` command
+I reccommend using a venv to keep the libraries for this project separate from the main python interpreter. To create a venv, from the project's main directory run `python3 -m venv ./venv`. Now everytime you want to use this venv run `source venv/bin/activate`. To deactivate simpy use the `deactivate` command
 
 This project uses Python3, in order to run it you will need some dependencies. To get them you can run `pip install -r requirements.txt`
+
+TODO: add how to run project and edit main 
 
 ## Definitions (as used in this project)
 Strings - Strings are connection types that only carry tension, they lengthen as force is applied  
