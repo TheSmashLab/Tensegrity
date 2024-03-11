@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List
+from typing import List, Dict
 
 class Node:
     """
@@ -71,11 +71,12 @@ class Control:
     
 
 class Tensegrity:
-    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: dict[str, List[bool]] = [], Controls: List[Control] = []):
+    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: Dict[str, List[bool]] = [], Controls: List[Control] = []):
         self.Nodes = Nodes
         self.Connections = Connections
         self.Pins = Pins
         self.Controls = Controls
+        self.ControlsDict = {control.connection.name: control for control in Controls} # TODO: use either this or the list, not both
     
     # TODO: Change method to use control strings instead of a named connections
     def change_connection_length(self, connection_name: str, delta: float):

@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List
+from typing import List, Tuple, Dict
 from scipy.optimize import minimize
 
 from data_structures import Node, Connection, Tensegrity
@@ -22,7 +22,10 @@ class Optimizer:
             self.connections = tensegrity.Connections
 
             self.pinned_nodes = tensegrity.Pins
-            self.num_pins = sum([bools.count(True) for bools in self.pinned_nodes.values()])
+            self.num_pins = sum([bools.count(True) for bools in self.pinned_nodes.values()]) # QUESTION: is this ever used? If not, remove it.
+            
+            self.controls = tensegrity.ControlsDict
+            
             self.d = d
 
             # Setup
@@ -100,19 +103,56 @@ class Optimizer:
             return np.zeros(N1.shape)
         return k * (np.linalg.norm(N2 - N1) - l) * (N2 - N1) / np.linalg.norm(N2 - N1)
     
+    def _springConnection(self, connection: Connection, N: np.ndarray) -> Dict[str, np.ndarray]:
+        """
+        Calculates the forces exerted by a spring connection on the nodes.
+
+        Args:
+            connection (Connection): The spring connection object.
+            N (np.ndarray): The current positions of all nodes.
+
+        Returns:
+            Dict[str, np.ndarray]: A dictionary containing node names as keys and the forces exerted on them by the spring connection as values.
+        """
+
+        # current length
+        l = 0
+        for i in range(len(connection.nodes) - 1):
+            l += np.linalg.norm(N[self.node_indices[connection.nodes[i].name]] - N[self.node_indices[connection.nodes[i+1].name]])
+
+        # scalar force
+        F = connection.stiffness * (l - connection.length)
+
+        forces = {node.name: np.zeros(self.d) for node in connection.nodes}
+        for i in range(len(connection.nodes) - 1):
+            N1 = N[self.node_indices[connection.nodes[i].name]]
+            N2 = N[self.node_indices[connection.nodes[i+1].name]]
+
+            # Vector forces
+            forces[connection.nodes[i].name] += F * (N2 - N1) / np.linalg.norm(N2 - N1)
+            forces[connection.nodes[i+1].name] += F * (N1 - N2) / np.linalg.norm(N2 - N1)
+        
+        # Add in force from control string pull
+        if connection.name and connection.name in self.controls:
+            control = self.controls[connection.name]
+            forces[control.node.name] += F * control.direction[:self.d] / np.linalg.norm(control.direction[:self.d])
+        
+        return forces
+              
+    
     @staticmethod
     def _barConstraint(N1: np.ndarray, N2: np.ndarray, l: float) -> float:
-            """
-            The constraint function for a bar. 
-            The length should stay the same and thus when optimized this function should return 0.
+        """
+        The constraint function for a bar. 
+        The length should stay the same and thus when optimized this function should return 0.
 
-            Args:
-                N1 (np.array([x,y])): The first node.
-                N2 (np.array([x,y])): The second node.
-                l (float): The length of the bar.
+        Args:
+            N1 (np.array([x,y])): The first node.
+            N2 (np.array([x,y])): The second node.
+            l (float): The length of the bar.
 
-            """
-            return np.linalg.norm(N2 - N1) - l
+        """
+        return np.linalg.norm(N2 - N1) - l
     
     def _constraint_function(self, x):
         """
@@ -137,22 +177,22 @@ class Optimizer:
         return constraints
     
     def _createInputX(self) -> np.ndarray:
-            """
-            Creates the input vector x0 for the optimization problem.
+        """
+        Creates the input vector x0 for the optimization problem.
 
-            Returns:
-                np.ndarray: The input vector x0. 
-                            The first d*len(nodes) elements are the node positions (except those that are pinned) 
-                            and the last len(bar_connections) elements are the bar forces.
-            """
-            x0 = np.array([node.position[:self.d] for node in self.nodes]).flatten() # position of the nodes
-            
-            x0 = np.delete(x0, [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
+        Returns:
+            np.ndarray: The input vector x0. 
+                        The first d*len(nodes) elements are the node positions (except those that are pinned) 
+                        and the last len(bar_connections) elements are the bar forces.
+        """
+        x0 = np.array([node.position[:self.d] for node in self.nodes]).flatten() # position of the nodes
+        
+        x0 = np.delete(x0, [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
 
-            x0 = np.append(x0, [0]*len(self.bar_connections)) # Add the bar forces to the initial guess (all zeros)
-            return x0
+        x0 = np.append(x0, [0]*len(self.bar_connections)) # Add the bar forces to the initial guess (all zeros)
+        return x0
     
-    def _getFromInputX(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _getFromInputX(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Extracts node positions and bar forces from the input vector.
 
@@ -184,18 +224,12 @@ class Optimizer:
         N, B_forces = self._getFromInputX(x)
 
         node_equations = np.zeros((len(self.nodes), self.d)) # d equations for each node that must sum to zero
-        for connection in self.string_connections:
-            # TODO: Allow a connection to pass through more than 2 nodes
-            N1 = N[self.node_indices[connection.nodes[0].name]]
-            N2 = N[self.node_indices[connection.nodes[1].name]]
-
-            F = self._spring(N1, N2, connection.length, connection.stiffness)
-            
-            node_equations[self.node_indices[connection.nodes[0].name]] += F if connection.name not in self.pinned_nodes else F[self.pinned_nodes[connection.name][:self.d]]
-            node_equations[self.node_indices[connection.nodes[1].name]] -= F
-            
-            connection.tension = np.linalg.norm(F) #TODO: only need to save tension ^ after solved, not at each iteration
         
+        for connection in self.string_connections:
+            forces = self._springConnection(connection, N)
+            for node, force in forces.items():
+                node_equations[self.node_indices[node]] += force
+
         for connection in self.bar_connections:
             N1 = N[self.node_indices[connection.nodes[0].name]]
             N2 = N[self.node_indices[connection.nodes[1].name]]
@@ -203,6 +237,6 @@ class Optimizer:
             F = B_forces[self.bar_indices[connection]] * (N2 - N1) / np.linalg.norm(N2 - N1)
             node_equations[self.node_indices[connection.nodes[0].name]] += F
             node_equations[self.node_indices[connection.nodes[1].name]] += -F
-            connection.tension = np.linalg.norm(F) #TODO: only need to save tension after solved, not at each iteration
+            # connection.tension = np.linalg.norm(F) #TODO: only need to save tension after solved, not at each iteration
         
         return np.square(node_equations).sum()
