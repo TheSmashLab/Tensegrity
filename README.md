@@ -32,8 +32,6 @@ The `2D-Tensegrity-Sim` directory contains all the code for the project.
 The `yaml` directory contains sample yaml files for running the sim
 
 # Ideas for future implementation
-* If stretched string length is less than start length, F -> 0
-    * Change color on viz to show
 * Create GUI to help create yaml files
     * yaml file contains just nodes and gui has interface to define how they are connected
     * Allow easy "tiling" of single cells to n x m cells

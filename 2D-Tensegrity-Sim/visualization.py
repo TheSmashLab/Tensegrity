@@ -58,9 +58,10 @@ class Visualization:
                         if connection.name:
                             color_names[connection.name] = color_index
                         color_index += 1
-
+                    
+                    style = '--' if connection.tension > 0 else ':'
                     # Plot line
-                    ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f'{color}--')
+                    ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f'{color}{style}')
                     
                 
                 # Bars are solid lines
