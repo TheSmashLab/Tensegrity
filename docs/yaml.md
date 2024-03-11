@@ -31,7 +31,7 @@ connections:
         - [Node1, Node2]
 ```
 
-Connections can also optionally be named for later specifying connections to pin or to shorten.
+Connections can also optionally be named for later specifying connections to control.
 
 ```yaml
 connections:
@@ -40,13 +40,20 @@ connections:
         - [Node2, Node3] # Unnamed connection
 ```
 
+## Pins
+In 2D space the solved structure can float anywhere in the XY plane with any rotation unless we pin nodes (to define a place in XY space the structure is fixed to)
+
+A pin needs a node name and a list of True/False values, with True indicating that the node is pinned in that direction. To pin `Node1` in the x and y directions:
+```yaml
+pin:
+  Node1: [True, True, False]
+```
 
 ## Builders
 Builders are the connection properties that define the strings or bars that hold the nodes together.
 A builder must have a name matching a connection type in the `Connections` section.
 
 For the `string` connection type with a stiffness (k) of 100N/m (it is actually unitless, but it helps me to think of everything in terms of metric units) and the string tensioned to 5N this section would look like:
-
 
 ```yaml
 builders:
@@ -57,12 +64,18 @@ builders:
 
 If the tension is unknown but the unstretched length of the string is known, Hooke's Law can be used to calculate the initial tension: $F = k * (l_s - l)$ where $l_s$ is the stretched length of the string (distance between it's nodes) and $l$ is the unstretched length.
 
-If a connection type does not have a builder assigned to it, it is assumed to be a bar, which I define as a member being able to transfer force along its length, while not changing in length.
-
-
-## Pins
-In 2D space the solved structure can float anywhere in the XY plane with any rotation unless we pin a node (to define a place in XY space) and the direction of one of the connections from that node (to define the rotation)
+If a connection type does not have a builder assigned to it, it is assumed to be a bar, which is defined as a member able to transfer force along its length, while not changing in length.
 
 
 ## Control
-The `control` section defines which wires have 
+The `control` section defines which strings are able to be controlled (change length).
+
+To define a control string the name of the connection, node the string is being pulled through and the direction the string is being pulled need to be defined. For instance if the connection `String` is being controlled, with extra length being pulled through `Node1` in the negative x direction:
+```yaml
+control:
+  String1:
+    node: Node1
+    direction: [-1, 0, 0]
+```
+
+The magnitude of the direction vector doesn't matter for the solver, but does for the visualization, so if the arrow in the plot is larger than desired, the magnitude of the direction vector can be shrunk to the desired size.

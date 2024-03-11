@@ -8,7 +8,12 @@ I reccommend using a venv to keep the libraries for this project separate from t
 
 This project uses Python3, in order to run it you will need some dependencies. To get them you can run `pip install -r requirements.txt`
 
-TODO: add how to run project and edit main 
+TODO: add how to run project and edit main  
+To run the project:
+```bash
+python3 2D-Tensegrity-Sim/main.py <path/to/yaml/config>
+```
+Where sample yaml files are provided in the `yaml` directory
 
 ## Definitions (as used in this project)
 Strings - Strings are connection types that only carry tension, they lengthen as force is applied  
@@ -18,10 +23,10 @@ Bar - A bar can carry either tension or compression, but does not change length
 ### 2D-Tensegrity-Sim
 The `2D-Tensegrity-Sim` directory contains all the code for the project.
 * `main.py` is the primary file to run the project. It take as an input a yaml file
-* `data_structures.py` contains the `Node` and `Connection` classes
-* `yaml_parser.py` reads the yaml file and returns info stored in their respective data types. See [YAML Doc](docs/yaml.md) for how to format the yaml file
+* `data_structures.py` contains the `Node`, `Connection`, `Control`, and `Tensegrity` classes
+* `yaml_parser.py` reads the yaml file and returns the Tensegrity object. See [YAML Doc](docs/yaml.md) for how to format the yaml file
 * `visualization.py` shows the tensegrity structure using matplotlib
-* `sim.py` contains all the code to calculate how the structure changes
+* `optimization.py` uses an optimizer to solve for an updated structure (through the `Tensegrity.change_connection_length()` function)
 
 ### yaml
 The `yaml` directory contains sample yaml files for running the sim
