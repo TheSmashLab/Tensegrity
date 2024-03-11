@@ -15,8 +15,7 @@ def main(file):
     tensegrity_system.change_connection_length("String1", -.3)
     opt.optimize()
 
-    # viz.plot(label_nodes=True, label_forces=True)
-    viz.plot(label_nodes=True)
+    viz.plot(label_nodes=True, label_forces=True)
 
     return
 

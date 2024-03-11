@@ -73,15 +73,6 @@ class Optimizer:
                 node.position = N[i]
 
             # TODO: update the forces in the connections
-                
-            # --------------------- Debugging ---------------------
-            # print(result)
-            # print("Length of bar connections:")
-            # for connection in self.bar_connections:
-            #     N1 = N[self.node_indices[connection.nodes[0].name]]
-            #     N2 = N[self.node_indices[connection.nodes[1].name]]
-            #     print(f"Bar length: {connection.length: .4f}, Actual length: {np.linalg.norm(N2 - N1): .4f}")
-            #     assert np.isclose(connection.length, np.linalg.norm(N2 - N1), atol=1e-3), "Bar length does not match actual length."
 
             return
     
@@ -137,6 +128,8 @@ class Optimizer:
             control = self.controls[connection.name]
             forces[control.node.name] += F * control.direction[:self.d] / np.linalg.norm(control.direction[:self.d])
         
+        connection.tension = F # TODO: only need to save tension after solved, not at each iteration
+
         return forces
               
     
@@ -237,6 +230,6 @@ class Optimizer:
             F = B_forces[self.bar_indices[connection]] * (N2 - N1) / np.linalg.norm(N2 - N1)
             node_equations[self.node_indices[connection.nodes[0].name]] += F
             node_equations[self.node_indices[connection.nodes[1].name]] += -F
-            # connection.tension = np.linalg.norm(F) #TODO: only need to save tension after solved, not at each iteration
+            connection.tension = np.linalg.norm(F) #TODO: only need to save tension after solved, not at each iteration
         
         return np.square(node_equations).sum()
