@@ -2,11 +2,13 @@
 The config file is a YAML file defining:
 * [Nodes](#nodes)
 * [Connections](#connections)
-* [Builders](#builders) (optional)
+* [Builders](#builders)
 * [Pins](#pins)
-* [Control](#control) (optional)
+* [Control](#control)
 
-These sections can be defined in any order in the YAML file, but it is easiest to logically go through them in the order defined above
+These sections can be defined in any order in the YAML file, but it is easiest to logically go through them in the order defined above.
+
+There are sample config files in the `yaml` directory.
 
 ## Nodes
 Nodes are the points that bars and strings connect at.
@@ -40,13 +42,12 @@ connections:
         - [Node2, Node3] # Unnamed connection
 ```
 
-## Pins
-In 2D space the solved structure can float anywhere in the XY plane with any rotation unless we pin nodes (to define a place in XY space the structure is fixed to)
+Connections whose builder has a `k` value and `pretension` (strings), can pass through multiple nodes. They are assumed to frictionlessly pass through nodes and therefore always have the same tension along it's entire length.
 
-A pin needs a node name and a list of True/False values, with True indicating that the node is pinned in that direction. To pin `Node1` in the x and y directions:
 ```yaml
-pin:
-  Node1: [True, True, False]
+connections:
+    string:
+        - string1: [Node1, Node2, Node5, Node6]
 ```
 
 ## Builders
@@ -64,13 +65,21 @@ builders:
 
 If the tension is unknown but the unstretched length of the string is known, Hooke's Law can be used to calculate the initial tension: $F = k * (l_s - l)$ where $l_s$ is the stretched length of the string (distance between it's nodes) and $l$ is the unstretched length.
 
-If a connection type does not have a builder assigned to it, it is assumed to be a bar, which is defined as a member able to transfer force along its length, while not changing in length.
+If a **connection type does not have a builder assigned to it, it is assumed to be a bar**, which is defined as a member able to transfer force along its length, while not changing in length.
 
+## Pins
+In 2D space the solved structure can float anywhere in the XY plane with any rotation unless we pin nodes (to define a place in XY space the structure is fixed to)
+
+A pin needs a node name and a list of True/False values, with True indicating that the node is translationally pinned in that direction. To pin `Node1` in the x and y directions:
+```yaml
+pin:
+  Node1: [True, True, False]
+```
 
 ## Control
 The `control` section defines which strings are able to be controlled (change length).
 
-To define a control string the name of the connection, node the string is being pulled through and the direction the string is being pulled need to be defined. For instance if the connection `String` is being controlled, with extra length being pulled through `Node1` in the negative x direction:
+To define a control string the name of the connection, node the string is being pulled through, and the direction the string is being pulled need to be defined. For instance if the connection `String1` is being controlled, with extra length being pulled through `Node1` in the negative x direction:
 ```yaml
 control:
   String1:

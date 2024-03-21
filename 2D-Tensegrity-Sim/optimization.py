@@ -61,7 +61,7 @@ class Optimizer:
             constraints = {'type': 'eq', 'fun': self._constraint_function}
 
             x0 = self._createInputX()
-            result = minimize(self._objective, x0, constraints=constraints, tol=1e-10)
+            result = minimize(self._objective, x0, constraints=constraints, tol=1e-10, options={'maxiter': 1000})
             
             if not result.success:
                 print(result)

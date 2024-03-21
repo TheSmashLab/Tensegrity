@@ -1,26 +1,31 @@
 import argparse
-from yaml_parser import yaml_parser
 
+from yaml_parser import YamlParser
 from visualization import Visualization as Viz
 from optimization import Optimizer
 
 def main(file):
-    parser = yaml_parser(file)
-    tensegrity_system = parser.parse()
+    # Load the tensegrity system from the YAML file
+    tensegrity_system = YamlParser.parse(file)
     
+    # Create the visualization object
     viz = Viz(tensegrity_system)
 
-    opt = Optimizer(tensegrity_system, d=2)
-    opt.optimize()
 
+    # Plot the initial tensegrity system
     viz.plot(label_nodes=True, label_connections=True)
 
-    d_length = get_float_input("Change connection length by (0 to exit):")
+    # Solve the tensegrity system
+    opt = Optimizer(tensegrity_system, d=2)
+    opt.optimize()
+    viz.plot(label_nodes=True, label_forces=True)
+
+    d_length = get_float_input("Change connection length by (0 to exit): ")
     while d_length:
         tensegrity_system.change_connection_length("String1", d_length)
         opt.optimize()
         viz.plot(label_nodes=True, label_forces=True)
-        d_length = get_float_input("Change connection length by (0 to exit):")
+        d_length = get_float_input("Change connection length by (0 to exit): ")
 
     return
 

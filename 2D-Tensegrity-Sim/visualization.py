@@ -21,21 +21,26 @@ class Visualization:
         self.fig, self.ax = plt.subplots()
     
     def plot(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
-            """
-            Plots the visualization of the tensegrity structure.
+        """
+        Plot the visualization of the tensegrity structure.
 
-            Parameters:
-            - label_nodes (bool): Whether to label the nodes in the plot.
+        Args:
+            label_nodes (bool): Whether to label the node names in the plot. Default is False.
+            label_connections (bool): Whether to label the connection names in the plot. Default is False.
+            label_forces (bool): Whether to label the forces on the connections. Default is False.
 
-            Raises:
-            - NotImplementedError: If the visualization is not implemented for 3D structures.
-            """
-            if self.dim == 2:
-                self.plot_2d(label_nodes, label_connections, label_forces)
-            else:
-                raise NotImplementedError("3D visualization not implemented yet.")
+        Raises:
+            NotImplementedError: If the dimension is not 2.
+
+        Returns:
+            None
+        """
+        if self.dim == 2:
+            self._plot_2d(label_nodes, label_connections, label_forces)
+        else:
+            raise NotImplementedError("3D visualization not implemented yet.")
         
-    def plot_2d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
+    def _plot_2d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
             """
             Plots the 2D visualization of the tensegrity structure.
 

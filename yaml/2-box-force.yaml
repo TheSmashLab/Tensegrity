@@ -17,13 +17,16 @@ connections:
 
   string:
     - String1: [Node1, Node2]
-    - String2: [Node2, Node3]
+    
     - [Node3, Node4]
     - [Node4, Node1]
     
     - [Node2, Node5]
     - [Node5, Node6]
     - [Node6, Node3]
+  
+  string_hightension:
+    - String2: [Node2, Node3]
 
 pin:
   Node1: [True, True, False]
@@ -33,6 +36,10 @@ builders:
   string:
     stiffness: 100
     pretension: 5
+  
+  string_hightension:
+    stiffness: 100
+    pretension: 10
 
 control:
   String1:

@@ -4,20 +4,21 @@
 This repo contains code to create a simulation for 2D Tensegrity structures specifically tailored to the needs of the Elbow Brace Project.
 
 ## Getting started
-I reccommend using a venv to keep the libraries for this project separate from the main python interpreter. To create a venv, from the project's main directory run `python3 -m venv ./venv`. Now everytime you want to use this venv run `source venv/bin/activate`. To deactivate simpy use the `deactivate` command
+I reccommend using a venv to keep the libraries for this project separate from the main python interpreter. To create a venv, from the project's main directory run `python3 -m venv ./venv`. Now everytime you want to use this venv run `source venv/bin/activate`. To deactivate simply use the `deactivate` command. 
 
-This project uses Python3, in order to run it you will need some dependencies. To get them you can run `pip install -r requirements.txt`
+This project uses Python3, in order to run it you will need some dependencies. To get them you can run `pip install -r requirements.txt` (with the venv active)
 
-TODO: add how to run project and edit main  
 To run the project:
 ```bash
 python3 2D-Tensegrity-Sim/main.py <path/to/yaml/config>
 ```
-Where sample yaml files are provided in the `yaml` directory
+Sample yaml config files are provided in the `yaml` directory. To understand how to change the simulation to your needs, see the [simulation setup](docs/setup.md) documentation. 
 
-## Definitions (as used in this project)
+## Definitions and Conventions (as used in this project)
 Strings - Strings are connection types that only carry tension, they lengthen as force is applied  
-Bar - A bar can carry either tension or compression, but does not change length
+Bar - A bar can carry either tension or compression, but does not change length  
+Forces - Tensions are positive values and compression forces in connections are negative.
+
 
 ## Organization
 ### 2D-Tensegrity-Sim

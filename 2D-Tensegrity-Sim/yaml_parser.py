@@ -1,42 +1,41 @@
-from numpy import inf
-import yaml
 from os.path import isfile
-from typing import List, Tuple
+import yaml
+
+from numpy import inf
 
 from data_structures import Node, Connection, Control, Tensegrity
 
-class yaml_parser:
+class YamlParser:
     """
-    A class for parsing YAML files and extracting nodes and connections.
-
-    Args:
-        file (str): The path to the YAML file to be parsed.
-
-    Raises:
-        FileNotFoundError: If the specified file does not exist.
+    A class for parsing YAML files and creating a Tensegrity object.
 
     Attributes:
-        file (str): The path to the YAML file.
+        None
 
     Methods:
-        parse: Parses the YAML file and returns a tuple containing a list of nodes and a list of connections.
+        parse(file: str) -> Tensegrity:
+            Parses the YAML file and returns a Tensegrity object.
+
     """
 
-    def __init__(self, file: str):
-        # validate file
-        if not isfile(file):
-            raise FileNotFoundError(f"The file {file} does not exist.")
-                
-        self.file = file
-
-    def parse(self) -> Tensegrity:
+    @staticmethod
+    def parse(file: str) -> Tensegrity:
         """
         Parses the YAML file and returns a tuple containing a list of nodes and a list of connections.
 
+        Args:
+            file (str): The path to the YAML file.
+
         Returns:
             Tensegrity: The tensegrity system containing Nodes and Connections.
+
+        Raises:
+            FileNotFoundError: If the specified file does not exist.
         """
-        with open(self.file, 'r') as stream:
+        if not isfile(file):
+            raise FileNotFoundError(f"The file {file} does not exist.")
+
+        with open(file, 'r') as stream:
             try:
                 data = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
@@ -46,7 +45,7 @@ class yaml_parser:
             # TODO: make sure all floats are read in as floats, not strings (direction of [-.25, 0, 0] read in -.25 in as string)
             
             # --- Nodes ---
-            Nodes = {} # Dictionary to store nodes so I can find them by name, will convert to list later to create Tensegrity object
+            Nodes = {} # Dictionary to store nodes so I can find them by name
             for node in data["nodes"]:
                 Nodes[node] = (Node(node, data['nodes'][node]))
 
