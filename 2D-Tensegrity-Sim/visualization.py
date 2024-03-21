@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
 class Visualization:
     def __init__(self, Tensegrity, dim=2):
@@ -16,6 +17,8 @@ class Visualization:
         self.Controls = Tensegrity.Controls
 
         self.dim = dim
+
+        self.fig, self.ax = plt.subplots()
     
     def plot(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
             """
@@ -42,8 +45,8 @@ class Visualization:
             Returns:
             - None
             """
-            fig, ax = plt.subplots()
-            ax.set_aspect('equal')
+            self.ax.clear()
+            self.ax.set_aspect('equal')
             color_index = 1 # Using "CN" color cycle
             color_names = {}
             
@@ -59,42 +62,41 @@ class Visualization:
                             color_names[connection.name] = color_index
                         color_index += 1
                     
-                    style = '--' if connection.tension > 0 else ':'
+                    style = '--' if connection.force > 1e-3 else ':'
                     # Plot line
-                    ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f'{color}{style}')
+                    self.ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f'{color}{style}')
                     
                 
                 # Bars are solid lines
                 elif connection.stiffness == 0:
-                    ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], 'k-')
+                    style = '-' if np.abs(connection.force) > 1e-3 else '-.'
+                    self.ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], f'k{style}')
 
             # --- plot nodes and label ---
             for node in self.Nodes:
                 # TODO: How to differentiate between 1D and 2D pinning?
                 if node.name in self.Pins:
-                    ax.plot(node.position[0], node.position[1], 'rX')
+                    self.ax.plot(node.position[0], node.position[1], 'rX')
                 else:
-                    ax.plot(node.position[0], node.position[1], 'ko')
+                    self.ax.plot(node.position[0], node.position[1], 'ko')
                 if label_nodes:
-                    ax.annotate(node.name, (node.position[0], node.position[1]), (.2, .2), textcoords='offset fontsize')
+                    self.ax.annotate(node.name, (node.position[0], node.position[1]), (.2, .2), textcoords='offset fontsize')
             
             if label_forces:
                 for connection in self.Connections:
                     if connection.name:
-                        ax.annotate(f"{connection.name}: {connection.tension:.2f}", ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
+                        self.ax.annotate(f"{connection.name}: {connection.force:.2f}", ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
                     else:
-                        ax.annotate(f"{connection.tension:.2f}", ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
+                        self.ax.annotate(f"{connection.force:.2f}", ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
             elif label_connections:
                 for connection in self.Connections:
                     if connection.name:
-                        ax.annotate(connection.name, ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
+                        self.ax.annotate(connection.name, ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha='center')
 
             # --- plot controls ---
             if self.Controls:
                 for control in self.Controls:
                     color = f"C{color_names[control.connection.name]}" # Make sure the color matches the associated connection
-                    ax.arrow(control.node.position[0], control.node.position[1], control.direction[0], control.direction[1], head_width=0.05, head_length=0.1, width=.01, color=color)
+                    self.ax.arrow(control.node.position[0], control.node.position[1], control.direction[0], control.direction[1], head_width=0.05, head_length=0.1, width=.01, color=color)
 
-            fig.show()
-            input("Press Enter to close the plot...")
-            plt.close(fig)
+            self.fig.show()

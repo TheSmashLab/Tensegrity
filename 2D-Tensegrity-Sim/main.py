@@ -9,16 +9,31 @@ def main(file):
     tensegrity_system = parser.parse()
     
     viz = Viz(tensegrity_system)
-    viz.plot(label_nodes=True, label_connections=True)
 
     opt = Optimizer(tensegrity_system, d=2)
-    tensegrity_system.change_connection_length("String1", -.3)
     opt.optimize()
 
-    viz.plot(label_nodes=True, label_forces=True)
+    viz.plot(label_nodes=True, label_connections=True)
+
+    d_length = get_float_input("Change connection length by (0 to exit):")
+    while d_length:
+        tensegrity_system.change_connection_length("String1", d_length)
+        opt.optimize()
+        viz.plot(label_nodes=True, label_forces=True)
+        d_length = get_float_input("Change connection length by (0 to exit):")
 
     return
 
+def get_float_input(prompt):
+    while True:
+        try:
+            user_input = input(prompt)
+            float_value = float(user_input)
+            if float_value == 0:
+                return None
+            return float_value
+        except ValueError:
+            print("Invalid input. Please enter a valid floating-point number.")
 
 
 if __name__ == "__main__":

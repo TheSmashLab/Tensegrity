@@ -2,7 +2,7 @@ import numpy as np
 from typing import List, Tuple, Dict
 from scipy.optimize import minimize
 
-from data_structures import Node, Connection, Tensegrity
+from data_structures import Connection, Tensegrity
 np.set_printoptions(precision=3, suppress=True) # for debugging
 
 
@@ -61,39 +61,29 @@ class Optimizer:
             constraints = {'type': 'eq', 'fun': self._constraint_function}
 
             x0 = self._createInputX()
-            result = minimize(self._objective, x0, constraints=constraints)
+            result = minimize(self._objective, x0, constraints=constraints, tol=1e-10)
             
             if not result.success:
                 print(result)
                 raise ValueError("Optimization failed.")
             
-            N = self._getFromInputX(result.x)[0]
+            if result.fun > 1e-3:
+                print(result)
+                raise ValueError("Optimization failed. Objective function not minimized to 0.")
+
+            N, B_forces = self._getFromInputX(result.x)
+
+            # TODO: update the forces in the connections
+            self._updateForces(N, B_forces)
 
             for i, node in enumerate(self.nodes):
                 node.position = N[i]
 
-            # TODO: update the forces in the connections
 
             return
     
 
     # --------------------- INTERNAL FUNCTIONS ---------------------
-    @staticmethod
-    def _spring(N1: np.ndarray, N2: np.ndarray, l: float, k:float) -> np.ndarray:
-        """
-        Calculates the force exerted on node1 by node2 modeled as a spring between them.
-
-        Args:
-            N1 (np.array([x,y])): The first node.
-            N2 (np.array([x,y])): The second node.
-            l (float): The length of the upstretched spring.
-            k (float): The spring constant.
-
-        """
-        if np.linalg.norm(N2 - N1) - l < 0:
-            return np.zeros(N1.shape)
-        return k * (np.linalg.norm(N2 - N1) - l) * (N2 - N1) / np.linalg.norm(N2 - N1)
-    
     def _springConnection(self, connection: Connection, N: np.ndarray) -> Dict[str, np.ndarray]:
         """
         Calculates the forces exerted by a spring connection on the nodes.
@@ -113,6 +103,7 @@ class Optimizer:
 
         # scalar force
         F = connection.stiffness * (l - connection.length)
+        F = max(0, F) # force can only be positive
 
         forces = {node.name: np.zeros(self.d) for node in connection.nodes}
         for i in range(len(connection.nodes) - 1):
@@ -127,8 +118,6 @@ class Optimizer:
         if connection.name and connection.name in self.controls:
             control = self.controls[connection.name]
             forces[control.node.name] += F * control.direction[:self.d] / np.linalg.norm(control.direction[:self.d])
-        
-        connection.tension = F # TODO: only need to save tension after solved, not at each iteration
 
         return forces
               
@@ -230,6 +219,41 @@ class Optimizer:
             F = B_forces[self.bar_indices[connection]] * (N2 - N1) / np.linalg.norm(N2 - N1)
             node_equations[self.node_indices[connection.nodes[0].name]] += F
             node_equations[self.node_indices[connection.nodes[1].name]] += -F
-            connection.tension = np.linalg.norm(F) #TODO: only need to save tension after solved, not at each iteration
+        
+        node_equations = np.delete(node_equations.flatten(), [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
         
         return np.square(node_equations).sum()
+    
+    def _updateForces(self, N: np.ndarray, B_forces: np.ndarray) -> None:
+        """
+        Update the forces in the connections of the 2D tensegrity structure.
+
+        Parameters:
+        - N (np.ndarray): The array of node positions.
+        - B_forces (np.ndarray): The array of bar forces.
+
+        Returns:
+        - None
+
+        This method calculates and updates the forces in the string and bar connections
+        of the 2D tensegrity structure based on the current node positions and bar forces.
+        It iterates through each connection, calculates the current length, and then
+        calculates the scalar force based on the connection's stiffness and desired length.
+        The force is then updated in the connection object.
+
+        Note: The force for string connections is clamped to be non-negative.
+
+        """
+        for connection in self.string_connections:
+            # current length
+            l = 0
+            for i in range(len(connection.nodes) - 1):
+                l += np.linalg.norm(N[self.node_indices[connection.nodes[i].name]] - N[self.node_indices[connection.nodes[i+1].name]])
+
+            # scalar force
+            F = connection.stiffness * (l - connection.length)
+            F = max(0, F) # force can only be positive
+            connection.force = F
+
+        for connection in self.bar_connections:
+            connection.force = B_forces[self.bar_indices[connection]]

@@ -40,7 +40,7 @@ class Connection:
 
         self.type = type # just stored for debugging purposes
         self.stiffness = stiffness
-        self.tension = pretension
+        self.force = pretension
 
         self.length = 0
         for i in range(len(self.nodes)-1):
