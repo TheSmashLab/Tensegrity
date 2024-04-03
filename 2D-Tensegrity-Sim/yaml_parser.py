@@ -81,10 +81,6 @@ class YamlParser:
             # --- Pins ---
             Pins = {}
             if "pin" in data: # TODO: behavior, it is better to connect to the objects or should we just store the names?
-                # if "nodes" in data["pin"]: 
-                #     Pins["nodes"] = [Nodes[n] for n in data["pin"]["nodes"]] # List of node objects
-                # if "connections" in data["pin"]:
-                #     Pins["connections"] = [connection_names[c] for c in data["pin"]["connections"]] # List of connection objects
                 for pin in data["pin"]:
                     Pins[pin] = data["pin"][pin]
 

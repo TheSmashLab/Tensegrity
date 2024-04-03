@@ -22,7 +22,6 @@ class Optimizer:
             self.connections = tensegrity.Connections
 
             self.pinned_nodes = tensegrity.Pins
-            self.num_pins = sum([bools.count(True) for bools in self.pinned_nodes.values()]) # QUESTION: is this ever used? If not, remove it.
             
             self.controls = tensegrity.ControlsDict
             
@@ -43,8 +42,6 @@ class Optimizer:
             self.bar_indices = {connection: i for i, connection in enumerate(self.bar_connections)}
 
     
-    
-
     def optimize(self) -> None:
             """
             Optimizes the position of nodes in the tensegrity structure.
@@ -55,25 +52,22 @@ class Optimizer:
             string and bar connections in the structure.
             
             Returns:
-                None
+                None. Changes are made internally to the Tensegrity object.
             """
             
-            constraints = {'type': 'eq', 'fun': self._constraint_function}
+            constraints = [{'type': 'eq', 'fun': self._barConstraints}, {'type': 'ineq', 'fun': lambda x: 1e-2 - self._nodeForces(x)}]
 
             x0 = self._createInputX()
-            result = minimize(self._objective, x0, constraints=constraints, tol=1e-10, options={'maxiter': 1000})
+            result = minimize(self._objective, x0, constraints=constraints, tol=1e-4, options={'maxiter': 1000})
             
             if not result.success:
                 print(result)
+                print(self._nodeForces(result.x))
                 raise ValueError("Optimization failed.")
-            
-            if result.fun > 1e-3:
-                print(result)
-                raise ValueError("Optimization failed. Objective function not minimized to 0.")
 
             N, B_forces = self._getFromInputX(result.x)
 
-            # TODO: update the forces in the connections
+            # update the forces in the connections
             self._updateForces(N, B_forces)
 
             for i, node in enumerate(self.nodes):
@@ -84,7 +78,38 @@ class Optimizer:
     
 
     # --------------------- INTERNAL FUNCTIONS ---------------------
-    def _springConnection(self, connection: Connection, N: np.ndarray) -> Dict[str, np.ndarray]:
+    def _objective(self, x: np.ndarray) -> float:
+        N, B_forces = self._getFromInputX(x)
+
+        energy_equations = np.zeros(len(self.string_connections))
+
+        for i, connection in enumerate(self.string_connections):
+            energy_equations[i] = self._springConnectionEnergy(connection, N)
+        
+        return energy_equations.sum() 
+    
+    def _springConnectionEnergy(self, connection: Connection, N: np.ndarray) -> float:
+        """
+        Calculates the energy stored in a spring connection.
+
+        Args:
+            connection (Connection): The spring connection object.
+            N (np.ndarray): The current positions of all nodes.
+
+        Returns:
+            float: The energy stored in the spring connection.
+        """
+        # current length
+        l = 0
+        for i in range(len(connection.nodes) - 1):
+            l += np.linalg.norm(N[self.node_indices[connection.nodes[i].name]] - N[self.node_indices[connection.nodes[i+1].name]])
+
+        # energy
+        energy = 0.5 * connection.stiffness * (l - connection.length)**2
+
+        return energy
+
+    def _springConnectionForces(self, connection: Connection, N: np.ndarray) -> Dict[str, np.ndarray]:
         """
         Calculates the forces exerted by a spring connection on the nodes.
 
@@ -114,29 +139,15 @@ class Optimizer:
             forces[connection.nodes[i].name] += F * (N2 - N1) / np.linalg.norm(N2 - N1)
             forces[connection.nodes[i+1].name] += F * (N1 - N2) / np.linalg.norm(N2 - N1)
         
+        # TODO: make optional if motor is located at node.
         # Add in force from control string pull
         if connection.name and connection.name in self.controls:
             control = self.controls[connection.name]
             forces[control.node.name] += F * control.direction[:self.d] / np.linalg.norm(control.direction[:self.d])
 
         return forces
-              
     
-    @staticmethod
-    def _barConstraint(N1: np.ndarray, N2: np.ndarray, l: float) -> float:
-        """
-        The constraint function for a bar. 
-        The length should stay the same and thus when optimized this function should return 0.
-
-        Args:
-            N1 (np.array([x,y])): The first node.
-            N2 (np.array([x,y])): The second node.
-            l (float): The length of the bar.
-
-        """
-        return np.linalg.norm(N2 - N1) - l
-    
-    def _constraint_function(self, x):
+    def _barConstraints(self, x):
         """
         Calculates the constraints for the optimization problem based on the given input vector x.
 
@@ -154,7 +165,7 @@ class Optimizer:
             N1 = N[self.node_indices[connection.nodes[0].name]]
             N2 = N[self.node_indices[connection.nodes[1].name]]
                 
-            constraints.append(self._barConstraint(N1, N2, connection.length))
+            constraints.append(np.linalg.norm(N2 - N1) - connection.length)
         
         return constraints
     
@@ -171,7 +182,8 @@ class Optimizer:
         
         x0 = np.delete(x0, [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
 
-        x0 = np.append(x0, [0]*len(self.bar_connections)) # Add the bar forces to the initial guess (all zeros)
+        # BUG: Return the initial forces to 0 after testing.
+        x0 = np.append(x0, [-5*np.sqrt(2)]*len(self.bar_connections)) # Add the bar forces to the initial guess (all zeros)
         return x0
     
     def _getFromInputX(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -202,27 +214,37 @@ class Optimizer:
 
         return N, B_forces
     
-    def _objective(self, x: np.ndarray) -> float:
+    def _nodeForces(self, x: np.ndarray) -> float:
+        """
+        Calculates the sum of the squares of the forces acting on each node in the x and y directions.
+
+        Parameters:
+        - x (np.ndarray): The input vector containing the values of N and B_forces.
+
+        Returns:
+        - float: The force value. Should be minimized to 0.
+
+        """
         N, B_forces = self._getFromInputX(x)
 
-        node_equations = np.zeros((len(self.nodes), self.d)) # d equations for each node that must sum to zero
+        node_forces = np.zeros((len(self.nodes), self.d)) # d equations for each node that must sum to zero
         
         for connection in self.string_connections:
-            forces = self._springConnection(connection, N)
+            forces = self._springConnectionForces(connection, N)
             for node, force in forces.items():
-                node_equations[self.node_indices[node]] += force
+                node_forces[self.node_indices[node]] += force
 
         for connection in self.bar_connections:
             N1 = N[self.node_indices[connection.nodes[0].name]]
             N2 = N[self.node_indices[connection.nodes[1].name]]
             
             F = B_forces[self.bar_indices[connection]] * (N2 - N1) / np.linalg.norm(N2 - N1)
-            node_equations[self.node_indices[connection.nodes[0].name]] += F
-            node_equations[self.node_indices[connection.nodes[1].name]] += -F
+            node_forces[self.node_indices[connection.nodes[0].name]] += F
+            node_forces[self.node_indices[connection.nodes[1].name]] += -F
         
-        node_equations = np.delete(node_equations.flatten(), [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
+        node_forces = np.delete(node_forces.flatten(), [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
         
-        return np.square(node_equations).sum()
+        return np.abs(node_forces)
     
     def _updateForces(self, N: np.ndarray, B_forces: np.ndarray) -> None:
         """

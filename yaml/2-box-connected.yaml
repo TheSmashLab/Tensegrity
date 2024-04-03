@@ -16,17 +16,23 @@ connections:
     - [Node3, Node5]
 
   string:
-    - [Node1, Node2]
-    - [Node2, Node3]
-    - String1: [Node1, Node4, Node3, Node6]
+    - String1: [Node1, Node2, Node5, Node6]
+    - [Node3, Node4]
+    - [Node4, Node1]
     
-    - String2: [Node2, Node5]
-    - [Node5, Node6]
-
+    - [Node6, Node3]
+  
+  hightension_string:
+    - [Node2, Node3]
+    
 builders:
   string:
     stiffness: 100
     pretension: 5
+  
+  hightension_string:
+    stiffness: 100
+    pretension: 10
 
 pin:
   Node1: [True, True, False]
@@ -37,6 +43,6 @@ control:
     node: Node1
     direction: [-0.25, 0, 0]
 
-  String2:
-    node: Node5
-    direction: [0.25, 0, 0]
+  # String2:
+  #   node: Node5
+  #   direction: [0.25, 0, 0]

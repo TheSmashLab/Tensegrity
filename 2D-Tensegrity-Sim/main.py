@@ -18,7 +18,7 @@ def main(file):
     # Solve the tensegrity system
     opt = Optimizer(tensegrity_system, d=2)
     opt.optimize()
-    viz.plot(label_nodes=True, label_forces=True)
+    viz.plot(label_nodes=True, label_connections=True)
 
     d_length = get_float_input("Change connection length by (0 to exit): ")
     while d_length:

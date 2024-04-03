@@ -52,6 +52,8 @@ class Visualization:
             """
             self.ax.clear()
             self.ax.set_aspect('equal')
+            self.ax.set_xlabel('X')
+            self.ax.set_ylabel('Y')
             color_index = 1 # Using "CN" color cycle
             color_names = {}
             
