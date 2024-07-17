@@ -42,7 +42,7 @@ class Visualization:
         Returns:
             None
         """
-        if self.dim == 3 or self.Surface:
+        if self.dim == 3:
             self._plot_3d(label_nodes, label_connections, label_forces)
         else:
             self._plot_2d(label_nodes, label_connections, label_forces)

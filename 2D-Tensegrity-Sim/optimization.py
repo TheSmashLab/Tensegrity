@@ -132,7 +132,7 @@ class Optimizer:
 
         forces = {node.name: np.zeros(self.d) for node in connection.nodes}
         for i in range(len(connection.nodes) - 1):
-            if {connection.nodes[i].name, connection.nodes[i+1].name} in self.Surface.linked_nodes:
+            if self.Surface and {connection.nodes[i].name, connection.nodes[i+1].name} in self.Surface.linked_nodes:
                 continue # skip linked nodes
 
             N1 = N[self.node_indices[connection.nodes[i].name]]
