@@ -7,7 +7,7 @@ np.set_printoptions(precision=3, suppress=True) # for debugging
 
 
 class Optimizer:
-    def __init__(self, tensegrity: Tensegrity, d: int = 3) -> None:
+    def __init__(self, tensegrity: Tensegrity, d: int = 2) -> None:
             """
             Initializes an Optimization object.
 
@@ -24,6 +24,8 @@ class Optimizer:
             self.pinned_nodes = tensegrity.Pins
             
             self.controls = tensegrity.ControlsDict
+            
+            self.Surface = tensegrity.Surface
             
             self.d = d
 
@@ -56,6 +58,8 @@ class Optimizer:
             """
             
             constraints = [{'type': 'eq', 'fun': self._barConstraints}, {'type': 'ineq', 'fun': lambda x: 1e-2 - self._nodeForces(x)}]
+            if self.Surface:
+                constraints.append({'type': 'eq', 'fun': self._surfaceConstraints})
 
             x0 = self._createInputX()
             result = minimize(self._objective, x0, constraints=constraints, tol=1e-4, options={'maxiter': 1000})
@@ -100,9 +104,7 @@ class Optimizer:
             float: The energy stored in the spring connection.
         """
         # current length
-        l = 0
-        for i in range(len(connection.nodes) - 1):
-            l += np.linalg.norm(N[self.node_indices[connection.nodes[i].name]] - N[self.node_indices[connection.nodes[i+1].name]])
+        l = self._connectionLength(connection, N)
 
         # energy
         energy = 0.5 * connection.stiffness * (l - connection.length)**2
@@ -122,16 +124,17 @@ class Optimizer:
         """
 
         # current length
-        l = 0
-        for i in range(len(connection.nodes) - 1):
-            l += np.linalg.norm(N[self.node_indices[connection.nodes[i].name]] - N[self.node_indices[connection.nodes[i+1].name]])
+        l = self._connectionLength(connection, N)
 
         # scalar force
-        F = connection.stiffness * (l - connection.length)
-        F = max(0, F) # force can only be positive
+        F = connection.stiffness * (l - connection.length) # Hooke's Law (stiffness * (current length - base length))
+        F = max(0, F) # force can only be positive (tension only)
 
         forces = {node.name: np.zeros(self.d) for node in connection.nodes}
         for i in range(len(connection.nodes) - 1):
+            if {connection.nodes[i].name, connection.nodes[i+1].name} in self.Surface.linked_nodes:
+                continue # skip linked nodes
+
             N1 = N[self.node_indices[connection.nodes[i].name]]
             N2 = N[self.node_indices[connection.nodes[i+1].name]]
 
@@ -146,6 +149,46 @@ class Optimizer:
             forces[control.node.name] += F * control.direction[:self.d] / np.linalg.norm(control.direction[:self.d])
 
         return forces
+    
+    def _connectionLength(self, connection: Connection, N: np.ndarray) -> float:
+        """
+        Calculates the current length of a connection based on the node positions.
+
+        Args:
+            connection (Connection): The connection object.
+            N (np.ndarray): The current positions of all nodes.
+
+        Returns:
+            float: The current length of the connection.
+        """
+        l = 0
+        for i in range(len(connection.nodes) - 1):
+            l += self._nodeDistance(connection.nodes[i].name, connection.nodes[i+1].name, N)
+        return l
+    
+    def _nodeDistance(self, node1: str, node2: str, N: np.ndarray) -> float:
+        """
+        Calculates the distance between two nodes based on their positions.
+
+        Args:
+            N (np.ndarray): The current positions of all nodes.
+            node1 (str): The name of the first node.
+            node2 (str): The name of the second node.
+
+        Returns:
+            float: The distance between the two nodes.
+        """
+        N1 = N[self.node_indices[node1]]
+        N2 = N[self.node_indices[node2]]
+        # if self.Surface:
+        #     if {node1, node2} in self.Surface.linked_nodes:
+        #         return 0
+        #     elif self.Surface.shape["surface_type"] == "cylinder":
+        #         r = self.Surface.shape["properties"]["radius"]
+        #         S = 2*r*np.arcsin(min(np.abs((N1[0] - N2[0]) / (2*r)), 1)) # arc length (adjusted for if starting value is not within the range of -1 to 1)
+        #         z = N1[1] - N2[1]
+        #         return np.sqrt(S**2 + z**2)
+        return np.linalg.norm(N1 - N2)
     
     def _barConstraints(self, x):
         """
@@ -162,11 +205,23 @@ class Optimizer:
         constraints = []
         # Add the bar constraints (length must stay the same)
         for connection in self.bar_connections:
-            N1 = N[self.node_indices[connection.nodes[0].name]]
-            N2 = N[self.node_indices[connection.nodes[1].name]]
-                
-            constraints.append(np.linalg.norm(N2 - N1) - connection.length)
+            constraints.append(self._nodeDistance(connection.nodes[0].name, connection.nodes[1].name, N) - connection.length)
         
+        return constraints
+
+    def _surfaceConstraints(self, x):
+
+        N, B_forces = self._getFromInputX(x)
+
+        constraints = []
+        if self.Surface.shape["surface_type"] == "cylinder":
+            r = self.Surface.shape["properties"]["radius"]
+            for node1, node2 in self.Surface.linked_nodes:
+                N1 = N[self.node_indices[node1]]
+                N2 = N[self.node_indices[node2]]
+                constraints.append(N1[1] - N2[1]) # y values must be the same
+                constraints.append(np.abs(N1[0] - N2[0]) - 2*np.pi*r) # x values must be exactly the circumference of the cylinder apart
+
         return constraints
     
     def _createInputX(self) -> np.ndarray:
@@ -205,7 +260,7 @@ class Optimizer:
             for i in range(self.d):
                 if bools[i]:
                     ins_index[index + i] = self.nodes[self.node_indices[node]].position[i]
-        for index, value in ins_index.items(): # QUESTION: Will this always work as expected? Insert in the correct order?
+        for index, value in ins_index.items():
             N = np.insert(N, index, value)
         
         N = N.reshape(-1, self.d)
@@ -242,7 +297,34 @@ class Optimizer:
             node_forces[self.node_indices[connection.nodes[0].name]] += F
             node_forces[self.node_indices[connection.nodes[1].name]] += -F
         
-        node_forces = np.delete(node_forces.flatten(), [self.node_indices[node]*self.d + i for node, bools in self.pinned_nodes.items() for i in range(self.d) if bools[i]])
+        
+        delete_indices = set() # used set to avoid duplicates
+        for node, bools in self.pinned_nodes.items(): # Remove pinned DoF from the force calculation (we assume there is whatever reaction force is needed to keep the node in place)
+            for i in range(self.d):
+                if bools[i]:
+                    delete_indices.add(self.node_indices[node]*self.d + i)
+        
+        if self.Surface:
+            for node1, node2 in self.Surface.linked_nodes: 
+                # combine the x forces of linked nodes
+                if self.node_indices[node1]*self.d in delete_indices:
+                    delete_indices.add(self.node_indices[node2]*self.d)
+                elif self.node_indices[node2]*self.d in delete_indices:
+                    delete_indices.add(self.node_indices[node1]*self.d)
+                else:
+                    node_forces[self.node_indices[node1]][0] += node_forces[self.node_indices[node2]][0]
+                    delete_indices.add(self.node_indices[node2]*self.d)
+
+                # combine the y forces
+                if self.node_indices[node1]*self.d + 1 in delete_indices:
+                    delete_indices.add(self.node_indices[node2]*self.d + 1)
+                elif self.node_indices[node2]*self.d + 1 in delete_indices:
+                    delete_indices.add(self.node_indices[node1]*self.d + 1)
+                else:
+                    node_forces[self.node_indices[node1]][1] += node_forces[self.node_indices[node2]][1]
+                    delete_indices.add(self.node_indices[node2]*self.d + 1)
+        
+        node_forces = np.delete(node_forces.flatten(), list(delete_indices))
         
         return np.abs(node_forces)
     
@@ -268,9 +350,7 @@ class Optimizer:
         """
         for connection in self.string_connections:
             # current length
-            l = 0
-            for i in range(len(connection.nodes) - 1):
-                l += np.linalg.norm(N[self.node_indices[connection.nodes[i].name]] - N[self.node_indices[connection.nodes[i+1].name]])
+            l = self._connectionLength(connection, N)
 
             # scalar force
             F = connection.stiffness * (l - connection.length)

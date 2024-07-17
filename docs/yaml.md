@@ -1,10 +1,10 @@
-# YAML Reference
+# YAML Reference <!-- omit from toc -->
 The config file is a YAML file defining:
-* [Nodes](#nodes)
-* [Connections](#connections)
-* [Builders](#builders)
-* [Pins](#pins)
-* [Control](#control)
+- [Nodes](#nodes)
+- [Connections](#connections)
+- [Builders](#builders)
+- [Pins](#pins)
+- [Control](#control)
 
 These sections can be defined in any order in the YAML file, but it is easiest to logically go through them in the order defined above.
 
