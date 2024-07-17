@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Tuple
 
 class Node:
     """
@@ -68,15 +68,30 @@ class Control:
         self.connection = connection
         self.node = node
         self.direction = np.array(direction, dtype=float)
-    
+
+
+class Surface:
+    """
+    Represents a surface in the simulation.
+
+    Attributes:
+        shape (dict): The shape of the surface. Contains 'surface_type' and 'properties'.
+        linked_nodes (List[Tuple[Node, Node]]): A list of tuples representing the linked nodes that form the seam on the surface.
+    """
+
+    def __init__(self, shape: Dict, linked_nodes: List[Tuple[Node, Node]]):
+        self.shape = shape
+        self.linked_nodes = linked_nodes
+
 
 class Tensegrity:
-    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: Dict[str, List[bool]] = [], Controls: List[Control] = []):
+    def __init__(self, Nodes: List[Node], Connections: List[Connection], Pins: Dict[str, List[bool]] = [], Controls: List[Control] = [], Surface: Surface = None):
         self.Nodes = Nodes
         self.Connections = Connections
         self.Pins = Pins
         self.Controls = Controls
         self.ControlsDict = {control.connection.name: control for control in Controls} # TODO: use either this or the list, not both
+        self.Surface = Surface
     
     # TODO: Change method to use control strings instead of a named connections
     def change_connection_length(self, connection_name: str, delta: float):

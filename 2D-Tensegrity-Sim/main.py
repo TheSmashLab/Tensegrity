@@ -9,14 +9,14 @@ def main(file):
     tensegrity_system = YamlParser.parse(file)
     
     # Create the visualization object
-    viz = Viz(tensegrity_system)
+    viz = Viz(tensegrity_system, dim=3)
 
 
     # Plot the initial tensegrity system
     viz.plot(label_nodes=True, label_connections=True)
 
     # Solve the tensegrity system
-    opt = Optimizer(tensegrity_system, d=2)
+    opt = Optimizer(tensegrity_system)
     opt.optimize()
     viz.plot(label_nodes=True, label_connections=True)
 
@@ -24,7 +24,8 @@ def main(file):
     while d_length:
         tensegrity_system.change_connection_length("String1", d_length)
         opt.optimize()
-        viz.plot(label_nodes=True, label_forces=True)
+        # viz.plot(label_nodes=True, label_forces=True)
+        viz.plot(label_nodes=True, label_connections=True)
         d_length = get_float_input("Change connection length by (0 to exit): ")
 
     return

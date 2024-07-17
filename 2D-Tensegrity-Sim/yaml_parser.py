@@ -3,7 +3,7 @@ import yaml
 
 from numpy import inf
 
-from data_structures import Node, Connection, Control, Tensegrity
+from data_structures import Node, Connection, Control, Surface, Tensegrity
 
 class YamlParser:
     """
@@ -90,6 +90,19 @@ class YamlParser:
                 for name in data["control"]:
                     node = Nodes[data["control"][name]["node"]] # Get node object
                     Controls.append(Control(connection_names[name], node, data["control"][name]["direction"]))
+            
+            # --- Surface ---
+            #TODO error checking: surface dict must have only 2 keys
+            Surface_ = None
+            linked_nodes = []
+            if "surface" in data:
+                for nodes in data['surface']["linked_nodes"]:
+                    # TODO error checking: list must have 2 elements, and they must be in the Nodes dictionary
+                    # TODO error checking: nodes must exist
+                    linked_nodes.append({nodes[0], nodes[1]})
+                surface_type = [key for key in data['surface'].keys() if key != "linked_nodes"][0] #find the key that is not linked_nodes
+                shape = {"surface_type": surface_type, "properties": data['surface'][surface_type]}
+                Surface_ = Surface(shape, linked_nodes)
 
-        return Tensegrity(list(Nodes.values()), Connections, Pins, Controls)
+        return Tensegrity(list(Nodes.values()), Connections, Pins, Controls, Surface_)
         
