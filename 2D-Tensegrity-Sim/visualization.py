@@ -180,5 +180,24 @@ class Visualization:
             for control in self.Controls:
                 color = f"C{color_names[control.connection.name]}" # Make sure the color matches the associated connection
                 self.ax.quiver(*transform(*control.node.position), *transform(*control.direction), color=color)
+        
+        # --- plot surface ---
+        if self.Surface:
+            if self.Surface.shape['surface_type'] == 'cylinder':
+                r = self.Surface.shape['properties']['radius']
+                z_max = -np.inf
+                z_min = np.inf
+                for N in self.Nodes:
+                    if transform(*N.position)[2] > z_max:
+                        z_max = transform(*N.position)[2]
+                    if transform(*N.position)[2] < z_min:
+                        z_min = transform(*N.position)[2]
+                resolution = 100 # Number of points to plot
+                z = np.linspace(z_min, z_max, resolution)
+                theta = np.linspace(0, 2*np.pi, resolution)
+                theta_grid, z_grid = np.meshgrid(theta, z)
+                x_grid = r*np.cos(theta_grid)
+                y_grid = r*np.sin(theta_grid)
+                self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.25, color='gray')
 
         self.fig.show()
