@@ -10,7 +10,7 @@ This project uses Python3, in order to run it you will need some dependencies. T
 
 To run the project:
 ```bash
-python3 2D-Tensegrity-Sim/main.py <path/to/yaml/config>
+python3 src/main.py <path/to/yaml/config>
 ```
 Sample yaml config files are provided in the `yaml` directory. To understand how to change the simulation to your needs, see the [simulation setup](docs/setup.md) documentation. 
 
@@ -22,7 +22,7 @@ Forces - Tensions are positive values and compression forces in connections are 
 
 ## Organization
 ### 2D-Tensegrity-Sim
-The `2D-Tensegrity-Sim` directory contains all the code for the project.
+The `src` directory contains all the code for the project.
 * `main.py` is the primary file to run the project. It take as an input a yaml file
 * `data_structures.py` contains the `Node`, `Connection`, `Control`, and `Tensegrity` classes
 * `yaml_parser.py` reads the yaml file and returns the Tensegrity object. See [YAML Doc](docs/yaml.md) for how to format the yaml file

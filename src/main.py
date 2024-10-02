@@ -9,7 +9,7 @@ def main(file):
     tensegrity_system = YamlParser.parse(file)
     
     # Create the visualization object
-    viz = Viz(tensegrity_system, dim=3)
+    viz = Viz(tensegrity_system, dim=2)
 
 
     # Plot the initial tensegrity system

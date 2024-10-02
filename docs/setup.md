@@ -1,6 +1,6 @@
 # Simulation Setup
 
-The `main()` function in `2D-Tensegrity-Sim/main.py` can be changed to run the simulation as desired.
+The `main()` function in `src/main.py` can be changed to run the simulation as desired.
 
 The primary parts to the simulations are:
 * The parser
