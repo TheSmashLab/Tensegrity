@@ -5,6 +5,7 @@ This repo contains code to create a simulation for 2D Tensegrity structures spec
 
 ## Getting started
 I reccommend using a venv to keep the libraries for this project separate from the main python interpreter. To create a venv, from the project's main directory run `python3 -m venv ./venv`. Now everytime you want to use this venv run `source venv/bin/activate`. To deactivate simply use the `deactivate` command. 
+If running on WSL, tkinter may not be installed by default. If the visualization doesn't open when you run the project you can install tkinter with `sudo apt install python3-tk`
 
 This project uses Python3, in order to run it you will need some dependencies. To get them you can run `pip install -r requirements.txt` (with the venv active)
 
