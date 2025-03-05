@@ -5,13 +5,13 @@ nodes:
   Node4: [0, 1, 0]
 
 connections:
-  string:
+  strings:
     - String1: [Node1, Node2]
     - [Node2, Node3]
     - [Node3, Node4]
     - [Node4, Node1]
 
-  bar:
+  bars:
     - [Node2, Node4]
     - [Node1, Node3]
 
@@ -21,11 +21,14 @@ pin:
 
 
 builders:
-  string:
+  strings:
     stiffness: 100
-    pretension: 5
+    type: string
+    initial_length_ratio: 0.95
+  
+  bars:
+    stiffness: 1000
+    type: bar
 
 control:
-  String1:
-    node: Node1
-    direction: [-0.25, 0, 0]
+  - String1

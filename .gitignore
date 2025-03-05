@@ -1,8 +1,15 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 
-# This Project
+### This Project ###
 figs/
+
+# A directory to play around with code
+testing/
+
+# Sphinx documentation 
+*/sphinx/_build/
+*/sphinx/content/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

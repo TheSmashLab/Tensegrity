@@ -28,21 +28,21 @@ connections:
 builders:
   string:
     stiffness: 100
-    pretension: 5
+    type: string
+    initial_length_ratio: 0.95
   
   hightension_string:
     stiffness: 100
-    pretension: 10
+    type: string
+    initial_length_ratio: 0.95
+  
+  bar:
+    stiffness: 1000
+    type: bar
 
 pin:
   Node1: [True, True, False]
   Node2: [False, True, False]
 
 control:
-  String1:
-    node: Node1
-    direction: [-0.25, 0, 0]
-
-  # String2:
-  #   node: Node5
-  #   direction: [0.25, 0, 0]
+  - String1
