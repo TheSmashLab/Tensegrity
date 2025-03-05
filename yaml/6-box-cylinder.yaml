@@ -63,25 +63,28 @@ connections:
 builders:
   string:
     stiffness: 100
-    pretension: 5
+    type: string
+    initial_length_ratio: 0.95
   
   inside_string:
     stiffness: 100
-    pretension: 10
+    type: string
+    initial_length_ratio: 0.90
+
+  bar:
+    stiffness: 1000
+    type: bar
 
 pin:
   Node1: [True, True, False]
   Node2: [False, True, False]
 
 control:
-  String1:
-    node: Node1
-    direction: [-0.25, 0, 0]
+  - String1
 
 surface:
   cylinder:
     radius: .477
-    height: 5
 
   linked_nodes:
     - [Node1, Node7]
