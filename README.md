@@ -1,7 +1,7 @@
 # 2D Tensegrity Sim
 
 ## About
-This repo contains code to create a simulation for 2D Tensegrity structures specifically tailored to the needs of the Elbow Brace Project.
+This repo contains code to create a simulation for Tensegrity structures specifically tailored to the needs of the Elbow Brace Project.
 
 ## Getting started
 I reccommend using a venv to keep the libraries for this project separate from the main python interpreter. To create a venv, from the project's main directory run `python3 -m venv ./venv`. Now everytime you want to use this venv run `source venv/bin/activate`. To deactivate simply use the `deactivate` command. 
