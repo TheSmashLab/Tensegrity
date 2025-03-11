@@ -11,43 +11,49 @@ class Visualization:
 
     Attributes:
         tensegrity (Tensegrity): The tensegrity structure to visualize.
-        dim (int): Dimension of the visualization (2 or 3).
         fig (Figure): Matplotlib figure object.
         ax (Axes): Matplotlib axes object.
+        dim (int): Dimension of the visualization (2, 2.5 or 3), set by the dim of the tensegrity.
     """
-    def __init__(self, tensegrity: Tensegrity, dim: int = 2):
+
+    def __init__(self, tensegrity: Tensegrity, dim: int = None):
         """
         Initializes a Visualization object.
 
         Args:
             tensegrity (Tensegrity): The tensegrity structure to visualize.
-            dim (int): The dimension of the visualization (default is 2).
+            dim (int, optional): The dimension of the visualization. Defaults to None, which matches the dim of tensegrity.
 
         Raises:
-            ValueError: If the dimension is not 2 or 3.
+            ValueError: If the dimension is not 2, 2.5, or 3.
         """
         self.tensegrity = tensegrity
 
-        self.dim = dim
+        if dim is None:
+            self.dim = tensegrity.dim
+        else:
+            self.dim = dim
 
-        if dim == 2:
+        if self.dim == 2:
             self.fig, self.ax = plt.subplots()
-        elif dim == 3:
+        elif self.dim == 3 or self.dim == 2.5:
             self.fig, self.ax = plt.subplots(subplot_kw={"projection": "3d"})
         else:
-            raise ValueError("Invalid dimension. Must be 2 or 3.")
+            raise ValueError("Invalid dimension. Must be 2, 2.5, or 3.")
 
     def plot(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
         """
         Plots the visualization of the tensegrity structure.
 
         Args:
-            label_nodes (bool): Whether to label the node names in the plot. Default is False.
-            label_connections (bool): Whether to label the connection names in the plot. Default is False.
-            label_forces (bool): Whether to label the forces on the connections. Default is False.
+            label_nodes (bool, optional): Whether to label the node names in the plot. Defaults to False.
+            label_connections (bool, optional): Whether to label the connection names in the plot. Defaults to False.
+            label_forces (bool, optional): Whether to label the forces on the connections. Defaults to False.
         """
         if self.dim == 3:
             self._plot_3d(label_nodes, label_connections, label_forces)
+        elif self.dim == 2.5:
+            self._plot_2_5d(label_nodes, label_connections, label_forces)
         else:
             self._plot_2d(label_nodes, label_connections, label_forces)
 
@@ -56,9 +62,9 @@ class Visualization:
         Plots the 2D visualization of the tensegrity structure.
 
         Args:
-            label_nodes (bool): Whether to label the node names in the plot. Default is False.
-            label_connections (bool): Whether to label the connection names in the plot. Default is False.
-            label_forces (bool): Whether to label the forces on the connections. Default is False.
+            label_nodes (bool, optional): Whether to label the node names in the plot. Defaults to False.
+            label_connections (bool, optional): Whether to label the connection names in the plot. Defaults to False.
+            label_forces (bool, optional): Whether to label the forces on the connections. Defaults to False.
         """
         self.ax.clear()
         self.ax.set_aspect("equal")
@@ -82,7 +88,6 @@ class Visualization:
                 style = "--" if connection.force > 1e-3 else ":"
                 # Plot line
                 self.ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f"{color}{style}")
-
 
             # Bars are solid lines
             elif connection.connection_type == Connection.ConnectionType.BAR:
@@ -110,7 +115,6 @@ class Visualization:
                 if connection.name:
                     self.ax.annotate(connection.name, ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha="center")
 
-
         self.fig.show()
 
     def _plot_3d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
@@ -118,9 +122,75 @@ class Visualization:
         Plots the 3D visualization of the tensegrity structure.
 
         Args:
-            label_nodes (bool): Whether to label the node names in the plot. Default is False.
-            label_connections (bool): Whether to label the connection names in the plot. Default is False.
-            label_forces (bool): Whether to label the forces on the connections. Default is False.
+            label_nodes (bool, optional): Whether to label the node names in the plot. Defaults to False.
+            label_connections (bool, optional): Whether to label the connection names in the plot. Defaults to False.
+            label_forces (bool, optional): Whether to label the forces on the connections. Defaults to False.
+        """
+        self.ax.clear()
+        self.ax.set_box_aspect([1.0,1.0,1.0])
+        self.ax.set_xlabel("X")
+        self.ax.set_ylabel("Y")
+        self.ax.set_zlabel("Z")
+        color_index = 1 # Using "CN" color cycle
+        color_names = {}
+
+        # --- plot nodes ---
+        for node in self.tensegrity.nodes:
+            if node.name in self.tensegrity.pins:
+                self.ax.plot3D(*node.position, "rX")
+            else:
+                self.ax.plot3D(*node.position, "ko")
+
+            if label_nodes:
+                self.ax.text(*node.position, node.name)
+
+        # --- Plot connections ---
+        for connection in self.tensegrity.connections:
+            # Strings are dashed lines
+            if connection.connection_type == Connection.ConnectionType.STRING:
+                # Set color
+                color = "k"
+                if connection.name or len(connection.nodes) > 2:
+                    color = f"C{color_index}"
+                    if connection.name:
+                        color_names[connection.name] = color_index
+                    color_index += 1
+
+                style = "--" if connection.force > 1e-3 else ":"
+                # Plot line
+                positions = np.array([node.position for node in connection.nodes])
+                self.ax.plot3D(positions[:, 0], positions[:, 1], positions[:, 2], f"{color}{style}")
+
+            # Bars are solid lines
+            elif connection.connection_type == Connection.ConnectionType.BAR:
+                style = "-" if np.abs(connection.force) > 1e-3 else "-."
+                for i in range(len(connection.nodes)-1):
+                    positions = np.array([node.position for node in connection.nodes])
+                    self.ax.plot3D(positions[:, 0], positions[:, 1], positions[:, 2], f"k{style}")
+
+        # --- label ---
+        if label_forces:
+            for connection in self.tensegrity.connections:
+                if connection.name:
+                    self.ax.text(*(connection.nodes[0].position + connection.nodes[1].position)/2, f"{connection.name}: {connection.force:.2f}")
+                else:
+                    self.ax.text(*(connection.nodes[0].position + connection.nodes[1].position)/2, f"{connection.force:.2f}")
+        elif label_connections:
+            for connection in self.tensegrity.connections:
+                if connection.name:
+                    self.ax.text(*(connection.nodes[0].position + connection.nodes[1].position)/2, connection.name)
+
+        self.set_3d_equal_scaling(self.ax)
+        self.fig.show()
+
+    def _plot_2_5d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
+        """
+        Plots the 2.5D visualization of the tensegrity structure.
+
+        Args:
+            label_nodes (bool, optional): Whether to label the node names in the plot. Defaults to False.
+            label_connections (bool, optional): Whether to label the connection names in the plot. Defaults to False.
+            label_forces (bool, optional): Whether to label the forces on the connections. Defaults to False.
         """
         self.ax.clear()
         self.ax.set_box_aspect([1.0,1.0,1.0])
@@ -162,28 +232,25 @@ class Visualization:
                 style = "--" if connection.force > 1e-3 else ":"
                 # Plot line
                 # calculate all the points along the line before the transform
-                if self.tensegrity.surface:
-                    for i in range(len(connection.nodes)-1):
-                        # if nodes are linked nodes, continue
-                        if {connection.nodes[i].name, connection.nodes[i+1].name} in self.tensegrity.surface.linked_nodes:
-                            continue
-                        t_values = np.linspace(0, 1, 100)
-                        x_values = connection.nodes[i].position[0] + t_values*(connection.nodes[i+1].position[0] - connection.nodes[i].position[0])
-                        y_values = connection.nodes[i].position[1] + t_values*(connection.nodes[i+1].position[1] - connection.nodes[i].position[1])
-                        positions = transform(x_values, y_values)
-                        self.ax.plot3D(positions[0], positions[1], positions[2], f"{color}{style}")
-                else:
-                    positions = [transform(node.position[0], node.position[1], node.position[2]) for node in connection.nodes]
-                    self.ax.plot3D([pos[0] for pos in positions], [pos[1] for pos in positions], [pos[2] for pos in positions], f"{color}{style}")
+                for i in range(len(connection.nodes)-1):
+                    # if nodes are linked nodes, continue
+                    if {connection.nodes[i].name, connection.nodes[i+1].name} in self.tensegrity.surface.linked_nodes:
+                        continue
+                    t_values = np.linspace(0, 1, 100)
+                    positions = np.array([connection.nodes[i].position, connection.nodes[i+1].position])
+                    positions = positions[0] + t_values[:, None] * (positions[1] - positions[0])
+                    positions = transform(positions[:, 0], positions[:, 1])
+                    self.ax.plot3D(positions[0], positions[1], positions[2], f"{color}{style}")
 
             # Bars are solid lines
             elif connection.connection_type == Connection.ConnectionType.BAR:
                 style = "-" if np.abs(connection.force) > 1e-3 else "-."
                 for i in range(len(connection.nodes)-1):
                     t_values = np.linspace(0, 1, 100)
-                    x_values = connection.nodes[i].position[0] + t_values*(connection.nodes[i+1].position[0] - connection.nodes[i].position[0])
-                    y_values = connection.nodes[i].position[1] + t_values*(connection.nodes[i+1].position[1] - connection.nodes[i].position[1])
-                    positions = transform(x_values, y_values)
+                    positions = np.array([node.position for node in connection.nodes])
+                    positions = positions[0] + t_values[:, None] * (positions[1] - positions[0])
+                    positions = transform(positions[:, 0], positions[:, 1])
+
                     self.ax.plot3D(positions[0], positions[1], positions[2], f"k{style}")
 
         # --- label ---

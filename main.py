@@ -7,18 +7,15 @@ def main(file):
     tensegrity_system = YamlParser.parse(file)
 
     # Create the visualization object
-    if tensegrity_system.surface:
-        viz = Visualization(tensegrity_system, dim=3)
-    else:
-        viz = Visualization(tensegrity_system, dim=2)
-
+    viz = Visualization(tensegrity_system)
 
     # Plot the initial tensegrity system
     viz.plot(label_nodes=True, label_connections=True)
 
     # Solve the tensegrity system
-    solver = TensegritySolver(tensegrity_system, dim=2)
+    solver = TensegritySolver(tensegrity_system)
     solver.solve()
+    
     viz.plot(label_nodes=True, label_connections=True)
 
     show_forces = False

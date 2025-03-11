@@ -32,13 +32,11 @@ viz.plot(label_nodes=True, label_connections=True)
 ## TensegritySolver
 The `TensegritySolver` class takes in a `Tensegrity` object and can then be used to solve the system using the `solve()` method. 
 
-A tensegrity object with a surface defined should use the `TensegritySolver` with the dimension parameter set to 2.
-
 ```python
 from TensegritySim import TensegritySolver
 
 # Create the TensegritySolver object
-solver = TensegritySolver(tensegrity_system, dim=2)
+solver = TensegritySolver(tensegrity_system)
 
 # Manipulate the tensegrity system
 tensegrity_system.change_control_lengths(-0.5)

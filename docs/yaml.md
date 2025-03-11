@@ -24,6 +24,7 @@ nodes:
     Node1: [1, 2, 0]
 ```
 
+The Tensegrity class sets the number of dimensions to 2 or 3 based on the number of coordinates given for the nodes. If all nodes have 3 coordinates, the structure is solved in 3D space. If any nodes have only 2 coordinates, the structure is solved in 2D space.
 
 ## Connections
 Connections are how the nodes are connected to each other. There can be unlimited connection types, with each connection type having different properties as defined in the [Builders](#builders) section.
