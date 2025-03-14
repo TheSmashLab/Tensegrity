@@ -9,7 +9,6 @@ testing/
 
 # Sphinx documentation 
 */sphinx/_build/
-*/sphinx/content/
 
 ### Python ###
 # Byte-compiled / optimized / DLL files

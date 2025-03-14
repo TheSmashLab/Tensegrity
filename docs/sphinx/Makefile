@@ -17,14 +17,9 @@ help:
 clean:
 	@rm -rf $(BUILDDIR)/*
 
-prep:
-	cp ../../README.md ./content/
-	cp ../yaml.md ./content/
-	cp ../setup.md ./content/
-
-html: prep
+html: 
 	@$(SPHINXBUILD) -M html "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-latexpdf: prep
+latexpdf: 
 	@$(SPHINXBUILD) -M latexpdf "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 	mv _build/latex/TensegritySim.pdf ../TensegritySim.pdf

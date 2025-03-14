@@ -44,3 +44,7 @@ tensegrity_system.change_control_lengths(-0.5)
 solver.solve()
 ```
 
+## UML Class Diagrams
+![Data Structures](data_structures.png)
+![Tensegrity_Solver](tensegrity_solver.png)
+![Visualization](visualization.png)
