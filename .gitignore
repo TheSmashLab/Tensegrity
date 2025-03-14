@@ -2,7 +2,8 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 
 ### This Project ###
-figs/
+figs/*
+!figs/*.plantuml
 
 # A directory to play around with code
 testing/
