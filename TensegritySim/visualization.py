@@ -87,7 +87,13 @@ class Visualization:
 
                 style = "--" if connection.force > 1e-3 else ":"
                 # Plot line
-                self.ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f"{color}{style}")
+                if self.tensegrity.surface:
+                    for i in range(len(connection.nodes)-1):
+                        if {connection.nodes[i].name, connection.nodes[i+1].name} in self.tensegrity.surface.linked_nodes:
+                            continue
+                        self.ax.plot([connection.nodes[i].position[0], connection.nodes[i+1].position[0]], [connection.nodes[i].position[1], connection.nodes[i+1].position[1]], f"{color}{style}")
+                else:
+                    self.ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], f"{color}{style}")
 
             # Bars are solid lines
             elif connection.connection_type == Connection.ConnectionType.BAR:
