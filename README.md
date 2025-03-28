@@ -14,7 +14,7 @@ To run the project:
 ```bash
 python3 main.py <path/to/yaml/config>
 ```
-Sample yaml config files are provided in the `yaml` directory. To understand how to change the simulation to your needs, see the [simulation setup](docs/setup.md) documentation. 
+Sample yaml config files are provided in the `yaml` directory. To understand how to change the simulation to your needs, see the [documentation](docs/TensegritySim.pdf) documentation. 
 
 ## Installation
 
