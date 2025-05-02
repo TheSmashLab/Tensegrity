@@ -129,8 +129,8 @@ builders:
     type: bar
 
 pin:
-  Node11: [True, True, False]
-  Node12: [False, True, False]
+  Node11: [True, True]
+  Node12: [False, True]
 
 control:
   - String1

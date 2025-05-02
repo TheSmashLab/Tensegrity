@@ -16,8 +16,8 @@ connections:
     - [Node1, Node3]
 
 pin:
-  Node1: [True, True, False]
-  Node2: [False, True, False]
+  Node1: [True, True]
+  Node2: [False, True]
 
 
 builders:

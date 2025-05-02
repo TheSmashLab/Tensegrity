@@ -74,8 +74,8 @@ builders:
     type: bar
 
 pin:
-  Node1: [True, True, False]
-  Node2: [False, True, False]
+  Node1: [True, True]
+  Node2: [False, True]
 
 control:
   - String1
