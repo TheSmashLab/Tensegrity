@@ -103,6 +103,71 @@ class Connection:
 
         self.force = force
 
+class NonLinProps:
+    """
+    Represents the material properties of a non-linear connection.
+    
+    Attributes:
+        strain (numpy.ndarray): The strain values.
+        stress (numpy.ndarray): The stress values.
+    """
+    def __init__(self, strain: np.ndarray, stress: np.ndarray):
+
+        # check that the stress and strain arrays are numpy arrays
+        if not isinstance(strain, np.ndarray):
+            raise TypeError("Strain must be a numpy array.")
+        if not isinstance(stress, np.ndarray):
+            raise TypeError("Stress must be a numpy array.")
+
+        # check if the stress and strain arrays are of the same length
+        if len(stress) != len(strain):
+            raise ValueError("Stress and strain arrays must be of the same length.")
+
+        self.stress = stress
+        self.strain = strain
+
+class ConnectionNonLinear(Connection):
+    """
+    Represents a non-linear connection between nodes in a tensegrity structure.
+    Inherits from the Connection class.
+
+    Attributes:
+    """
+    height = 0.0012 # m
+    width = 0.0012 # m
+    area = height*width # m^2
+    def __init__(self, nodes: List[Node], connection_type: Connection.ConnectionType, material_properties: NonLinProps, initial_length: float = None, area: float = area, name: str = None):
+        """
+        Args:
+            nodes (List[Node]): A list of nodes that are part of the connection.
+            connection_type (Connection.ConnectionType): The type of connection.
+            material_properties (NonLinProps): The material properties of the connection.
+            initial_length (float, optional): The initial length of the connection. Defaults to None, meaning the current length as calculated by distance between nodes.
+            area (float, optional): The cross-sectional area of the connection. Defaults to the original area used in prototyping.
+            name (str, optional): The name of the connection. Defaults to None.
+        """
+
+        super().__init__(nodes, connection_type, 0, initial_length, name)
+        self.material_properties = material_properties
+        self.strain = self.material_properties.strain
+        self.stress = self.material_properties.stress
+        self.area = area
+        self.stiffness = self.area*np.gradient(self.stress, self.strain, edge_order=2)[0]/self.current_length()
+
+        # create a lookup table for length, energy, and derivative of energy
+        self.lengths = self.strain * self.initial_length + self.initial_length
+        self.dV_dL = self.area * self.current_length() * np.gradient(self.stress, self.strain, edge_order=2)
+
+
+    # def dV_dq(self):
+    #     """
+    #     Returns the derivative of the potential energy with respect to the generalized coordinates.
+    #     """
+    #     dV_dq = {}
+    #     for i in range(len(self.nodes) - 1):
+    #         # TODO:
+    #         dV_dq[self.nodes[i].name] = self.material_properties.dV_dq(self.length, width, height) # return x and y components        
+    #     pass
 
 class Surface:
     """
