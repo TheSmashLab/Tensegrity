@@ -105,7 +105,7 @@ class Connection:
 
         self.force = force
 
-class NonLinProps:
+class NonlinProps:
     """
     Represents the material properties of a non-linear connection.
     
@@ -128,7 +128,7 @@ class NonLinProps:
         self.stress = stress
         self.strain = strain
 
-class ConnectionNonLinear(Connection):
+class ConnectionNonlinear(Connection):
     """
     Represents a non-linear connection between nodes in a tensegrity structure.
     Inherits from the Connection class.
@@ -138,12 +138,12 @@ class ConnectionNonLinear(Connection):
     height = 0.0012 # m
     width = 0.0012 # m
     area = height*width # m^2
-    def __init__(self, nodes: List[Node], connection_type: Connection.ConnectionType, material_properties: NonLinProps, initial_length: float = None, area: float = area, name: str = None):
+    def __init__(self, nodes: List[Node], connection_type: Connection.ConnectionType, material_properties: NonlinProps, initial_length: float = None, area: float = area, name: str = None):
         """
         Args:
             nodes (List[Node]): A list of nodes that are part of the connection.
             connection_type (Connection.ConnectionType): The type of connection.
-            material_properties (NonLinProps): The material properties of the connection.
+            material_properties (NonlinProps): The material properties of the connection.
             initial_length (float, optional): The initial length of the connection. Defaults to None, meaning the current length as calculated by distance between nodes.
             area (float, optional): The cross-sectional area of the connection. Defaults to the original area used in prototyping.
             name (str, optional): The name of the connection. Defaults to None.
