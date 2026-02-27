@@ -13,4 +13,4 @@ __all__ = ["Node", "Connection", "Surface", "Tensegrity",
            "NonlinProps", "ConnectionNonlinear",
            "YamlParser", "Visualization", "TensegritySolver"]
 
-version = "1.0.0"
+version = "1.0.1"
