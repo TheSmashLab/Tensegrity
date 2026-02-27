@@ -54,6 +54,7 @@ class Connection:
             initial_length (float, optional): The initial length of the connection. Defaults to None, meaning the current length as calculated by distance between nodes.
             name (str, optional): The name of the connection. Defaults to None.
         """
+        self.linear = True
         self.nodes = nodes
         self.nodes_original = [node.copy() for node in nodes]
 
@@ -68,6 +69,7 @@ class Connection:
         self.initial_length = initial_length
         self.force = None
         self.name = name
+        
 
     def current_length(self, linked_nodes: List[Tuple[Node, Node]] = None):
         """
@@ -148,6 +150,7 @@ class ConnectionNonLinear(Connection):
         """
 
         super().__init__(nodes, connection_type, 0, initial_length, name)
+        self.linear = False
         self.material_properties = material_properties
         self.strain = self.material_properties.strain
         self.stress = self.material_properties.stress

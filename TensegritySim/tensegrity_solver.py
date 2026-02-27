@@ -177,8 +177,18 @@ class TensegritySolver:
             return 0
 
         # energy
-        energy = 0.5 * connection.stiffness * (length - connection.initial_length)**2
-
+        if connection.material_properties is None: # If the connection is linear
+            energy = 0.5 * connection.stiffness * (length - connection.initial_length)**2
+        # If the connection is nonlinear
+        else:
+            # Numerical integration to calculate energy from the stress-strain curve
+            energy = 0
+            # Calculate the current strain
+            epsilon = (connection.current_length - connection.initial_length) / connection.initial_length # current strain
+            # Numerically integrate the area under the stress-strain curve up to the current strain
+            y = connection.material_properties.stress[connection.material_properties.strain <= epsilon]
+            x = connection.material_properties.strain[connection.material_properties.strain <= epsilon]
+            energy = np.trapz(y, x) * connection.initial_length * connection.area # energy = area under the curve * initial length * area of the connection
         return energy
 
     def _spring_connection_energy_derivative(self, connection: Connection, N: np.ndarray) -> np.ndarray:
@@ -207,7 +217,15 @@ class TensegritySolver:
         if connection.connection_type.name == Connection.ConnectionType.STRING.name and length < connection.initial_length: # string connections cannot store energy when compressed
             return np.zeros(self.dim*len(self.tensegrity.nodes))
 
-        C = -connection.stiffness * (length - connection.initial_length)
+        if connection.linear is True: # If the connection is linear
+            C = -connection.stiffness * (length - connection.initial_length)
+        else: # If the connection is nonlinear
+            # Calculate the current strain
+            epsilon = (connection.current_length - connection.initial_length) / connection.initial_length # current strain
+            # Calculate the current stress from the stress-strain curve
+            sigma = np.interp(epsilon, connection.material_properties.strain, connection.material_properties.stress)
+            F = sigma * connection.area # Force = stress * area
+            C = -F # C is the negative of the force
 
         return C * self._length_derivative(connection, N)
 
