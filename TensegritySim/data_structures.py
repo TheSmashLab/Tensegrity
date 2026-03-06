@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Dict, Tuple
 from enum import Enum
+from scipy.optimize import least_squares
 
 class Node:
     """
@@ -125,8 +126,27 @@ class NonlinProps:
         if len(stress) != len(strain):
             raise ValueError("Stress and strain arrays must be of the same length.")
 
-        self.stress = stress
         self.strain = strain
+        self.stress = stress
+
+        # Ogden Material Model
+        self.stretch = 1. + strain
+        stress_true = stress * self.stretch
+        
+        def ogden_uniaxial(params, stretch):
+            mu1, alpha1, mu2, alpha2, mu3, alpha3 = params
+            term1 = mu1 * (stretch**alpha1 - stretch**(-alpha1/2.))
+            term2 = mu2 * (stretch**alpha2 - stretch**(-alpha2/2.))
+            term3 = mu3 * (stretch**alpha3 - stretch**(-alpha3/2.))
+            return term1 + term2 + term3
+        
+        def ogden_residuals(params, stretch, stress_true):
+            return ogden_uniaxial(params, stretch) - stress_true
+
+        initial_guess = [128.89, 0.0888, -5.68, 6.99, -6.3, -13.5991] # Ogden parameters for Overture.
+        result = least_squares(ogden_residuals, initial_guess, args=(self.stretch, stress_true))
+        self.ogden_params = result.x
+    
 
 class ConnectionNonlinear(Connection):
     """
@@ -135,9 +155,9 @@ class ConnectionNonlinear(Connection):
 
     Attributes:
     """
-    height = 0.0012 # m
-    width = 0.0012 # m
-    area = height*width # m^2
+    height = 1.2 # mm
+    width = 1.2 # mm
+    area = height*width # mm^2
     def __init__(self, nodes: List[Node], connection_type: Connection.ConnectionType, material_properties: NonlinProps, initial_length: float = None, area: float = area, name: str = None):
         """
         Args:
@@ -160,7 +180,6 @@ class ConnectionNonlinear(Connection):
         self.lengths = self.strain * self.initial_length + self.initial_length
         self.dV_dL = self.area * self.current_length() * np.gradient(self.stress, self.strain, edge_order=2)
 
-
     # def dV_dq(self):
     #     """
     #     Returns the derivative of the potential energy with respect to the generalized coordinates.
@@ -170,6 +189,7 @@ class ConnectionNonlinear(Connection):
     #         # TODO:
     #         dV_dq[self.nodes[i].name] = self.material_properties.dV_dq(self.length, width, height) # return x and y components        
     #     pass
+
 
 class Surface:
     """

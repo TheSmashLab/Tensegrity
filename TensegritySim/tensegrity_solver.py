@@ -170,25 +170,32 @@ class TensegritySolver:
         Returns:
             float: The energy stored in the spring connection.
         """
-        # current length
-        length = self._connection_length(connection, N)
+        
+        length = self._connection_length(connection, N) # current length
+        length_0 = connection.initial_length # initial length
 
-        if connection.connection_type.name == Connection.ConnectionType.STRING.name and length < connection.initial_length:  # string connections cannot store energy when compressed
+        if connection.connection_type.name == Connection.ConnectionType.STRING.name and length < length_0:  # string connections cannot store energy when compressed
             return 0
 
         # energy
-        if connection.material_properties is None: # If the connection is linear
-            energy = 0.5 * connection.stiffness * (length - connection.initial_length)**2
-        # If the connection is nonlinear
-        else:
-            # Numerical integration to calculate energy from the stress-strain curve
-            energy = 0
-            # Calculate the current strain
-            epsilon = (connection.current_length - connection.initial_length) / connection.initial_length # current strain
-            # Numerically integrate the area under the stress-strain curve up to the current strain
-            y = connection.material_properties.stress[connection.material_properties.strain <= epsilon]
-            x = connection.material_properties.strain[connection.material_properties.strain <= epsilon]
-            energy = np.trapz(y, x) * connection.initial_length * connection.area # energy = area under the curve * initial length * area of the connection
+        if connection.linear is True: # If the connection is linear
+            energy = 0.5 * connection.stiffness * (length - length_0)**2
+        
+        else: # If the connection is nonlinear
+            Area = connection.area # cross-sectional area
+            mu1 = connection.material_properties.ogden_params[0]
+            alpha1 = connection.material_properties.ogden_params[1]
+            mu2 = connection.material_properties.ogden_params[2]
+            alpha2 = connection.material_properties.ogden_params[3]
+            mu3 = connection.material_properties.ogden_params[4]
+            alpha3 = connection.material_properties.ogden_params[5]
+
+            energy = length_0 * Area * mu1 / alpha1 * ((length/length_0 + 1.)**alpha1 - 2.**alpha1)
+            energy += 2. * length_0 * Area * mu1 / alpha1 * (2.**(-alpha1/2.) - (length/length_0 + 1.)**(-alpha1/2.))
+            energy += length_0 * Area * mu2 / alpha2 * ((length/length_0 + 1.)**alpha2 - 2.**alpha2)
+            energy += 2. * length_0 * Area * mu2 / alpha2 * (2.**(-alpha2/2.) - (length/length_0 + 1.)**(-alpha2/2.))
+            energy += length_0 * Area * mu3 / alpha3 * ((length/length_0 + 1.)**alpha3 - 2.**alpha3)
+            energy += 2. * length_0 * Area * mu3 / alpha3 * (2.**(-alpha3/2.) - (length/length_0 + 1.)**(-alpha3/2.))
         return energy
 
     def _spring_connection_energy_derivative(self, connection: Connection, N: np.ndarray) -> np.ndarray:
@@ -211,22 +218,30 @@ class TensegritySolver:
         Returns:
             np.ndarray: The derivative of the spring connection energy with respect to the node positions.
         """
-        # current length
-        length = self._connection_length(connection, N)
+        length = self._connection_length(connection, N) # current length
+        length_0 = connection.initial_length # initial length
 
-        if connection.connection_type.name == Connection.ConnectionType.STRING.name and length < connection.initial_length: # string connections cannot store energy when compressed
+        if connection.connection_type.name == Connection.ConnectionType.STRING.name and length < length_0: # string connections cannot store energy when compressed
             return np.zeros(self.dim*len(self.tensegrity.nodes))
 
         if connection.linear is True: # If the connection is linear
-            C = -connection.stiffness * (length - connection.initial_length)
+            C = -connection.stiffness * (length - length_0)
         else: # If the connection is nonlinear
-            # Calculate the current strain
-            epsilon = (connection.current_length - connection.initial_length) / connection.initial_length # current strain
-            # Calculate the current stress from the stress-strain curve
-            sigma = np.interp(epsilon, connection.material_properties.strain, connection.material_properties.stress)
-            F = sigma * connection.area # Force = stress * area
-            C = -F # C is the negative of the force
+            Area = connection.area # cross-sectional area
+            mu1 = connection.material_properties.ogden_params[0]
+            alpha1 = connection.material_properties.ogden_params[1]
+            mu2 = connection.material_properties.ogden_params[2]
+            alpha2 = connection.material_properties.ogden_params[3]
+            mu3 = connection.material_properties.ogden_params[4]
+            alpha3 = connection.material_properties.ogden_params[5]
 
+            F = Area * mu1 * ((length/length_0 + 1.)**(alpha1 - 1.) - 2.**(alpha1 - 1))
+            F += Area * mu1 * (2.**(-alpha1/2. - 1.) - (length/length_0 + 1.)**(-alpha1/2. - 1.))
+            F += Area * mu2 * ((length/length_0 + 1.)**(alpha2 - 1.) - 2.**(alpha2 - 1.))
+            F += Area * mu2 * (2.**(-alpha2/2. - 1.) - (length/length_0 + 1.)**(-alpha2/2. - 1.))
+            F += Area * mu3 * ((length/length_0 + 1.)**(alpha3 - 1.) - 2.**(alpha3 - 1.))
+            F += Area * mu3 * (2.**(-alpha3/2. - 1.) - (length/length_0 + 1.)**(-alpha3/2. - 1.))
+            C = -F # C is the negative of the force
         return C * self._length_derivative(connection, N)
 
     def _length_derivative(self, connection: Connection, N: np.ndarray) -> np.ndarray:
