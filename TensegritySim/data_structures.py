@@ -178,7 +178,7 @@ class ConnectionNonlinear(Connection):
 
         # create a lookup table for length, energy, and derivative of energy
         self.lengths = self.strain * self.initial_length + self.initial_length
-        self.dV_dL = self.area * self.current_length() * np.gradient(self.stress, self.strain, edge_order=2)
+        self.dV_dL = self.area * self.initial_length * np.gradient(self.stress, self.strain, edge_order=2)
 
     # def dV_dq(self):
     #     """

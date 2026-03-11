@@ -179,7 +179,7 @@ class TensegritySolver:
 
         # energy
         if connection.linear is True: # If the connection is linear
-            energy = 0.5 * connection.stiffness * (length - length_0)**2
+            energy = 0.5 * connection.stiffness * (length**2 - length_0**2)
         
         else: # If the connection is nonlinear
             Area = connection.area # cross-sectional area
@@ -235,12 +235,12 @@ class TensegritySolver:
             mu3 = connection.material_properties.ogden_params[4]
             alpha3 = connection.material_properties.ogden_params[5]
 
-            F = Area * mu1 * ((length/length_0 + 1.)**(alpha1 - 1.) - 2.**(alpha1 - 1))
-            F += Area * mu1 * (2.**(-alpha1/2. - 1.) - (length/length_0 + 1.)**(-alpha1/2. - 1.))
-            F += Area * mu2 * ((length/length_0 + 1.)**(alpha2 - 1.) - 2.**(alpha2 - 1.))
-            F += Area * mu2 * (2.**(-alpha2/2. - 1.) - (length/length_0 + 1.)**(-alpha2/2. - 1.))
-            F += Area * mu3 * ((length/length_0 + 1.)**(alpha3 - 1.) - 2.**(alpha3 - 1.))
-            F += Area * mu3 * (2.**(-alpha3/2. - 1.) - (length/length_0 + 1.)**(-alpha3/2. - 1.))
+            F = Area * mu1 * (length/length_0)**(alpha1 - 1.)
+            F += Area * mu1 * (- (length/length_0)**(-alpha1/2. - 1.))
+            F += Area * mu2 * (length/length_0)**(alpha2 - 1.)
+            F += Area * mu2 * (- (length/length_0)**(-alpha2/2. - 1.))
+            F += Area * mu3 * (length/length_0)**(alpha3 - 1.)
+            F += Area * mu3 * (- (length/length_0)**(-alpha3/2. - 1.))
             C = -F # C is the negative of the force
         return C * self._length_derivative(connection, N)
 
