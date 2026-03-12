@@ -235,12 +235,12 @@ class TensegritySolver:
             mu3 = connection.material_properties.ogden_params[4]
             alpha3 = connection.material_properties.ogden_params[5]
 
-            F = Area * mu1 * (length/length_0)**(alpha1 - 1.)
-            F += Area * mu1 * (- (length/length_0)**(-alpha1/2. - 1.))
-            F += Area * mu2 * (length/length_0)**(alpha2 - 1.)
-            F += Area * mu2 * (- (length/length_0)**(-alpha2/2. - 1.))
-            F += Area * mu3 * (length/length_0)**(alpha3 - 1.)
-            F += Area * mu3 * (- (length/length_0)**(-alpha3/2. - 1.))
+            F = Area * mu1 * ((length/length_0)**(alpha1 - 1.) - (1.))
+            F += Area * mu1 * (1. + (- (length/length_0)**(-alpha1/2. - 1.)))
+            F += Area * mu2 * ((length/length_0)**(alpha2 - 1.) - (1.))
+            F += Area * mu2 * (1. + (- (length/length_0)**(-alpha2/2. - 1.)))
+            F += Area * mu3 * ((length/length_0)**(alpha3 - 1.) - (1.))
+            F += Area * mu3 * (1. + (- (length/length_0)**(-alpha3/2. - 1.)))
             C = -F # C is the negative of the force
         return C * self._length_derivative(connection, N)
 
