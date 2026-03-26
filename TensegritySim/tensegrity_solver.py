@@ -86,13 +86,64 @@ class TensegritySolver:
                 print("Optimization failed again.")
                 return
 
-        N = self._get_nodes_from_input(result.x)
+        self._apply_solution(result.x)
 
-        # update the positions of the nodes
+        if initial_force_norm > 1e-3 and self._force_norm() < 1e-4:
+            print("Detected null-force equilibrium. Retrying with reference-shape stabilization.")
+            mean_stiffness = np.mean([connection.stiffness for connection in self.tensegrity.connections])
+            target_force_norm = max(0.05 * initial_force_norm, 1e-3)
+
+            best_x = None
+            best_force_norm = -np.inf
+            for stiffness_factor in [1e-3, 1e-2, 1e-1, 1.0]:
+                self.reference_stiffness = max(stiffness_factor * mean_stiffness, 1e-3)
+                stabilized_result = root(self._objective, x0_reference, method=method)
+
+                if not stabilized_result.success:
+                    continue
+
+                self._apply_solution(stabilized_result.x)
+                candidate_force_norm = self._force_norm()
+                if candidate_force_norm > best_force_norm:
+                    best_force_norm = candidate_force_norm
+                    best_x = stabilized_result.x.copy()
+
+                if candidate_force_norm >= target_force_norm:
+                    break
+
+            self.reference_stiffness = 0.0
+
+            if best_x is not None:
+                self._apply_solution(best_x)
+                if best_force_norm < target_force_norm:
+                    print(f"Stabilized solve did not fully reach target force norm ({best_force_norm:.4e} < {target_force_norm:.4e}).")
+            else:
+                print("Stabilized solve failed for all tested stiffness levels; keeping original solution.")
+
+
+    def _apply_solution(self, x: np.ndarray) -> None:
+        """
+        Updates node positions and connection forces from a solver state vector.
+
+        Args:
+            x (np.ndarray): Flattened free-coordinate state vector.
+        """
+        N = self._get_nodes_from_input(x)
+
         for i, node in enumerate(self.tensegrity.nodes):
             node.position = N[i]
 
         self.tensegrity.update_forces()
+
+    def _force_norm(self) -> float:
+        """
+        Returns the Euclidean norm of all connection forces.
+
+        Returns:
+            float: Force vector norm.
+        """
+        return np.linalg.norm([connection.force for connection in self.tensegrity.connections])
+
 
 
     # --------------------- INTERNAL FUNCTIONS ---------------------
