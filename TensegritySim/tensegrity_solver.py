@@ -70,7 +70,9 @@ class TensegritySolver:
             None. Changes are made internally to the Tensegrity object.
         """
         x0 = self._create_initial_guess() # The current positions of the nodes (excluding pinned nodes)
+        x0_reference = x0.copy()
         initial_force_norm = self._force_norm()
+        
         result = root(self._objective, x0, method=method) # solver
 
         if not result.success:
