@@ -1,0 +1,16 @@
+<launch>
+
+  <group>
+
+    <node pkg="serial_data" name="publish_serial" type="ROS_publish_serial.py"/>
+ 
+    <node pkg="rviz" name="rviz" type="rviz"/>
+
+    <node pkg="serial_data" name="force_markers" type="force_arrow_v2.py" output="screen"/>
+    
+    <node pkg="serial_data" name="publish_data" type="publish_calibrated_data_v3.py" output="screen"/>
+  
+  </group>
+
+</launch>
+

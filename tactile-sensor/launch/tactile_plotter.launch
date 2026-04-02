@@ -1,0 +1,9 @@
+<launch>
+
+  <group>
+
+    <node pkg="tactile_sensor" name="tactile_plotter" type="tactile_plotter.py" output="screen"/>
+  
+  </group>
+
+</launch>

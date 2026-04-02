@@ -1,0 +1,13 @@
+<launch>
+
+  <group>
+
+    <node pkg="serial_data" name="publish_serial" type="ROS_publish_serial.py"/>
+ 
+    <node pkg="serial_data" name="Grid_sensor" type="Grid_Squares_visualization_v2.py" output="screen"/>
+    
+    <node pkg="rviz" name="rviz" type="rviz"/>
+  
+  </group>
+
+</launch>
