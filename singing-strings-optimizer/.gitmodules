@@ -1,0 +1,3 @@
+[submodule "tensegrity-sim"]
+	path = tensegrity-sim
+	url = ssh://git@10.2.114.17:5050/elbow-brace/2d-tensegrity-sim.git
