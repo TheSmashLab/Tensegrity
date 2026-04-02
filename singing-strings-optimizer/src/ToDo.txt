@@ -1,0 +1,46 @@
+"""this is a list of tasks to accomplish so I don't forget where I left off"""
+
+- 2/14
+I am trying to get the yaml parser to read in string frequencies and measured lengths
+to use in the connections class of the data_structures file. I need to change my adjustments to the YAML parser
+right now I have added in the lengths and freq underneath the strings portion. the issue is the YAML parser
+does a for-loop for everyhting under the Connections heading at line 98. it is expecting there to only be a 
+"Strings" heading with the current info and it gets confused that there's more than that under "Connections"
+Ideally I want to change it so each string has the nodes that connect it followed by its frequency and then
+its measured lenght. right now it can read in those values for lines 83-94accurately its just the foor-loop
+gets tripped up.
+
+-2/18
+I went and made it so the optimizer runs by having frequencies input, you don't need measured lengths because they
+are calculated from node positions, so just make sure those are right. Now the challenge is getting the optimizer 
+to work, here's what I need to figure out:
+    -Remember to add back in a penalty so that string lengths are not changed too much
+    -figure out how to access the .length and .force of each individual string
+    -use the .forces to calculate objective function value
+    -change the .lengths of each string, re-calc the forces and repeat until converged
+
+    - the optimizer should chagne the lengths each time, initially the lengths are as in the YAML parser
+      but to change them I need to figure out if that can be done in the optimizer class or elsewhere
+-2/20
+I had austin go over it, he helped me know how to access the lengths and forces inside of the tensegrity class
+things left to do are:
+  - put in realistic values for the YAML and see if the tensegrity solves
+  - investigate if inputing frequencies from the YAML is permenantley messing up how forces are calculated when it gets
+    updated with new lengths
+
+2/24
+I'm trying to get the 3-bar model to solve with the physical measurements, I think there's something wrong with
+how the YAML is being read. I set the bar frequencies to None but they seem to be converted to 0.0 in the data_structures
+file. It always fails to solve, curiously the 1bar yaml with the frequencies adde does solve successfully, so I really
+don't know what the deal is with that
+
+
+3/3 
+I put in more accurate (still not perfect) values for bar stiffness and node positions, now the bars are evaluating
+with reasonable negative forces, and I think its solving better. I just need to make it so the bar lengths are never
+changed and see what that does.
+
+OKAY! its almost in working order, I think all the bugs are worked out and it is actually solving the system accurately.
+the test case of trying to get the 3 bar to all have the same forces isn't working, but when you just try to get the top 3
+strings equal (current settup) it does work. I moved the target tension to being defined once before the minimizer runs,
+right now its just set to be the average value of the different strings. Bounds are set so bars don't change lengths

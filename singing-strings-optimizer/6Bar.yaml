@@ -1,0 +1,123 @@
+# these are based on the idealized, not my current model
+nodes:
+  Node1: [0, .1425, .08807]
+  Node2: [0, -.1425, .08807]
+  Node3: [0, .1425, -.08807]
+  Node4: [0, -.1425, -.08807] # the rest have a -.05 to account for the height up to where the bar starts
+  Node5: [.08807, 0, -.1425]
+  Node6: [.08807, 0, .1425]
+  Node7: [-.08807, 0, -.1425]
+  Node8: [-.08807, 0, .1425]
+  Node9: [-.1425, .08807, 0]
+  Node10: [.1425, .08807, 0]
+  Node11: [-.1425, -.08807, 0]
+  Node12: [.1425, -.08807, 0]
+
+connections:
+  bars:
+    - bar1-2: [Node1, Node2]
+    - bar3-4: [Node3, Node4]
+    - bar5-6: [Node5, Node6]
+    - bar7-8: [Node7, Node8]
+    - bar9-10: [Node9, Node10]
+    - bar11-12: [Node11, Node12]
+
+
+  strings:
+    - String1-6: [Node1, Node6] #
+    - String1-8: [Node1, Node8] #
+    - String1-9: [Node1, Node9] #
+    - String1-10: [Node1, Node10] #
+    - String2-6: [Node2, Node6] #
+    - String2-8: [Node2, Node8] # 
+    - String2-11: [Node2, Node11] #
+    - String2-12: [Node2, Node12] # 
+    - String3-5: [Node3, Node5] #
+    - String3-7: [Node3, Node7] #  
+    - String3-9: [Node3, Node9] #
+    - String3-10: [Node3, Node10] #
+    - String4-5: [Node4, Node5] #
+    - String4-7: [Node4, Node7] #
+    - String4-11: [Node4, Node11] #
+    - String4-12: [Node4, Node12] #
+    - String5-10: [Node5, Node10] #
+    - String5-12: [Node5, Node12] #
+    - String6-10: [Node6, Node10] #
+    - String6-12: [Node6, Node12] #
+    - String7-9: [Node7, Node9] #
+    - String7-11: [Node7, Node11] #
+    - String8-9: [Node8, Node9] #
+    - String8-11: [Node8, Node11] #
+    
+    
+builders:
+  strings:
+    stiffness: 136485 #N/m
+    type: string
+    initial_length_ratio: 0.95
+    linear_density: 0.001589119542 #Kg/m
+    initial_frequencies: # Hz, same order as strings
+      - 616 # String1-6:
+      - 612 # String1-8:
+      - 530 # String1-9:
+      - 650 # String1-10
+      - 664 # String2-6:
+      - 677 # String2-8:
+      - 600 # String2-11
+      - 600 # String2-12
+      - 600 # String3-5:
+      - 600 # String3-7:
+      - 600 # String3-9:
+      - 600 # String3-10
+      - 616 # String4-5:
+      - 612 # String4-7:
+      - 530 # String4-11
+      - 650 # String4-12
+      - 664 # String5-10
+      - 677 # String5-12
+      - 600 # String6-10
+      - 600 # String6-12
+      - 600 # String7-9:
+      - 600 # String7-11
+      - 600 # String8-9:
+      - 600 # String8-11      
+
+
+
+  bars:
+    stiffness: 9162687.361 #N/m calculated from young's modulous for aluminum, may need it for PLA instead
+    type: bar
+  
+
+# pin:
+#   Node1: [True, True, True]
+#   Node2: [True, True, True]
+#   Node3: [True, True, True]
+
+control:
+- String1-6 
+- String1-8 
+- String1-9 
+- String1-10
+- String2-6 
+- String2-8 
+- String2-11
+- String2-12
+- String3-5 
+- String3-7 
+- String3-9 
+- String3-10
+- String4-5 
+- String4-7 
+- String4-11
+- String4-12
+- String5-10
+- String5-12
+- String6-10
+- String6-12
+- String7-9 
+- String7-11
+- String8-9 
+- String8-11
+
+
