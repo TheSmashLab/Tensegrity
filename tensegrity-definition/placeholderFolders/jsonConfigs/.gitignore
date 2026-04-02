@@ -1,0 +1,4 @@
+# Disregard this entire folder
+*.json
+# Except this .gitignore file
+!.gitignore

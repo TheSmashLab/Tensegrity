@@ -1,0 +1,61 @@
+ME 575 - Assignment #4 Constrained Optimization
+due March 13th, 2023, 11:59pm via Learning Suite
+Objective: Accelerate progress on your project, and learn about constrained optimization. We will learn
+more about how constrained optimization works by continuing to use existing tools and developing our
+own basic implementations.
+
+
+4.1 Prototype Problem
+Come up with a simplified version of your project as a “prototype”. The problem must have multiple design variables and multiple constraints, and should be solvable using a gradient-based method. Describe
+your problem in detail, and discuss any reformulation, derivative computing, scaling, parameterization, or
+other techniques you used to translate your engineering problem into a problem suitable for optimization.
+
+The problem that we have decided to tackle is optimizing a tensegrity structure for shock situation in which the tensegrity structure needs to protect a payload.  In order to change this engineering problem into a problem suitable for optimization, we have greatly simplified the tensegrity model to that of a system of springs.  these springs will represent the load dynamics of a tensegrity structure, and in the future will be a function of the tension internal to the system.  In the mean time, this spring constant will represent the objective function of the model, where the model will want to minimize the spring constant.  Other potential objective functions will include minimizing the size of the structure, the size of the strings holding the payload, and the orientation/ position of the object itself.
+The constraints for this problem will be that the payload must stay within the frame of the tensegrity structure (otherwise it will impact the ground in this example), and the total acceleration of the system must be below a certain number of gs that the system can withstand.
+For the simplified problem, the only objective that we are interested in optimizing is the equivilant spring constant, and the only constraint that will be used is the payload must remain within the boudaries of the system.  This approach is used because even though the simplified model has already been created, it is not a trivial matter to create these constraints.  Thus, for this homework we thought it would be sufficent to present the simplifed model and to create a simple optimizer with one objective and once constraint.
+See attached video for a visual of the system.
+
+4.2 Prototype Solution and Discussion
+Solve your problem using an existing optimizer. Discuss the results, lessons learned, and plans for expanding towards the final project.
+
+Results:
+The results of this was that depending on the starting point of the algorithm, the "minimize" step either could not converge, or converged at a sub-optimal point.
+This is because although the actual equation is differentiable with only 1 minimum, the actual implementaiton of this model allows for considerable randomness from the
+'maximum point' in the dynamics.  Overall, the results show that the function has many values that are close to optimal, but the optimizer fails to find those areas due to extremely
+imprecise maxima due to how the dynamics of the object are calculated.  This method also requires for the tolerance to be very high, since the gradients near optimal points are noisy.
+
+lessons learned:
+The results from this exercise helped determine that the states determined from the dynamics of the objects are noisy.  This means that the maximum displacement of a payload corner at
+any given time step varies by a set amount from reality.  This causes a significant amount of local minima in this problem, leading the optimizer to have a hard time finding the actual optimal
+solution.  This probably gives way to a genetic algorithm being the optimal way to solve this problem, to get rid of the random dynamics noise.  Another solution could be to take an average of the
+3 worst points grouped around each other to give a better, but lower, average.  This could be offset by some scalar to account for that, but probably wouldn't cure the local minima problem.
+
+plans:
+From this, we plan to make the primary optimization algorithm for this dataset a genetic algorithm capable of finding the smallest cost function by varying start points significantly.
+We will penalize this method by making infeasible regions much more penalized than feasible ones, but will allow point very close to optimal to be lower.
+
+
+4.3 Student-Defined Optimizer
+Write a basic constrained gradient-based optimizer to solve your problem using a method of your choice
+(e.g., penalty method, SQP, interior point, etc.). For the unconstrained or QP subproblems you are
+welcome to use a commercial optimizer (e.g., fminunc, quadprog, etc.). Compare the solution accuracy
+and convergence efficiency against your solution from 4.2.
+
+
+Notes:
+• 4.1 can be done as a team (one writeup that is copied for each student’s memo report), but the
+remaining tasks (4.2–4.3) need to be completed individually. Each of you needs to gain experience
+with the solvers and develop an understanding of how they work.
+
+• If your project is already so complex that the optimization algorithm you developed can’t handle
+it, you could use a simpler problem of your choice for 4.3. You’d still use your project problem in
+4.2, and then for 4.3 would solve the simpler problem using both your optimization algorithm and
+an existing optimization algorithm.
+
+• If you really don’t have any constraints for your project, you could temporarily use bounds as
+nonlinear constraints for the purpose of the assignment.
+
+• Some of you have problems that contain discrete variables and/or are discontinuous. If that describes your project, come up with a smooth approximation of your problem, or subproblem, that is
+differentiable. Come talk to me if you need ideas about how to do this. We will have an opportunity
+to explore gradient-free methods in the next module.
+

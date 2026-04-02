@@ -1,0 +1,4 @@
+# Disregard this entire folder
+*.txt
+# Except this .gitignore file
+!.gitignore
