@@ -1,0 +1,21 @@
+nodes:
+  (1.123457 2): [1.123457, 2.0, 0.0]
+  (3.141593 5): [3.141593, 5.0, 0.0]
+connections:
+  bars:
+  - [(1.123457 2), (3.141593 5)]
+  strings:
+  - [(1.123457 2), (3.141593 5)]
+  inside_strings: []
+builders:
+  bars:
+    stiffness: 1000
+    type: bar
+  strings:
+    stiffness: 100
+    type: string
+    initial_length_ratio: 0.95
+  inside_strings:
+    stiffness: 100
+    type: string
+    initial_length_ratio: 0.95

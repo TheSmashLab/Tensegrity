@@ -1,0 +1,55 @@
+nodes:
+  Node1: [0, 0, 0]
+  Node2: [187, 0, 0]
+  Node3: [140, 44, 0]
+  Node4: [47, 41, 0]
+
+connections:
+  leftspring:
+    - [Node4, Node1]
+
+  rightspring:
+    - [Node2, Node3]
+
+  topspring:
+    - [Node3, Node4]
+
+  strings:
+    - String1: [Node1, Node2]
+
+  bars:
+    - [Node2, Node4]
+    - [Node1, Node3]
+
+pin:
+  Node1: [True, True, False]
+  Node2: [False, True, False]
+
+
+builders:
+  leftspring:
+    stiffness: .09
+    type: string
+    initial_length_ratio: .812
+
+  topspring:
+    stiffness: .062
+    type: string
+    initial_length_ratio: .489
+
+  rightspring:
+    stiffness: .095
+    type: string
+    initial_length_ratio: .850
+  
+  strings:
+    stiffness: 100
+    type: string
+    initial_length_ratio: 1
+  
+  bars:
+    stiffness: 1000
+    type: bar
+
+control:
+  - String1

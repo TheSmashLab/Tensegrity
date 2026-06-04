@@ -1,31 +1,31 @@
 nodes:
-  Node11: [0, 0]
-  Node12: [1, 0]
-  Node13: [2, 0]
-  Node14: [3, 0]
-  Node15: [4, 0]
-  Node16: [5, 0]
+  Node11: [0, 0, 0]
+  Node12: [1, 0, 0]
+  Node13: [2, 0, 0]
+  Node14: [3, 0, 0]
+  Node15: [4, 0, 0]
+  Node16: [5, 0, 0]
 
-  Node21: [0, 1]
-  Node22: [1, 1]
-  Node23: [2, 1]
-  Node24: [3, 1]
-  Node25: [4, 1]
-  Node26: [5, 1]
+  Node21: [0, 1, 0]
+  Node22: [1, 1, 0]
+  Node23: [2, 1, 0]
+  Node24: [3, 1, 0]
+  Node25: [4, 1, 0]
+  Node26: [5, 1, 0]
 
-  Node31: [0, 2]
-  Node32: [1, 2]
-  Node33: [2, 2]
-  Node34: [3, 2]
-  Node35: [4, 2]
-  Node36: [5, 2]
+  Node31: [0, 2, 0]
+  Node32: [1, 2, 0]
+  Node33: [2, 2, 0]
+  Node34: [3, 2, 0]
+  Node35: [4, 2, 0]
+  Node36: [5, 2, 0]
 
-  Node41: [0, 3]
-  Node42: [1, 3]
-  Node43: [2, 3]
-  Node44: [3, 3]
-  Node45: [4, 3]
-  Node46: [5, 3]
+  Node41: [0, 3, 0]
+  Node42: [1, 3, 0]
+  Node43: [2, 3, 0]
+  Node44: [3, 3, 0]
+  Node45: [4, 3, 0]
+  Node46: [5, 3, 0]
 
 connections:
   bar:
@@ -129,15 +129,15 @@ builders:
     type: bar
 
 pin:
-  Node11: [True, True]
-  Node12: [False, True]
+  Node11: [True, True, False]
+  Node12: [False, True, False]
 
 control:
   - String1
 
 surface:
   cylinder:
-    radius: .557
+    radius: .795
 
   linked_nodes:
     - [Node16, Node11]

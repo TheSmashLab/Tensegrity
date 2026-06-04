@@ -1,7 +1,12 @@
 import pytest
-import numpy as np
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from TensegritySim import Node, Connection, Tensegrity, TensegritySolver
+import numpy as np
+from TensegritySim.data_structures import Connection, Node, Tensegrity
+from TensegritySim.tensegrity_solver import TensegritySolver
+
 
 @pytest.fixture
 def OnexOne_tensegrity():

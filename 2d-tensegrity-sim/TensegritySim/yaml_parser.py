@@ -103,14 +103,16 @@ class YamlParser:
 
             # --- Pins ---
             pins = {}
-            if "pin" in data:
-                for pin in data["pin"]:
-                    pins[pin] = data["pin"][pin] # NodeName: <Array of bools>
+            pin_key = "pin" if "pin" in data else "pins" if "pins" in data else None
+            if pin_key is not None:
+                for pin in data[pin_key]:
+                    pins[pin] = data[pin_key][pin] # NodeName: <Array of bools>
 
             # --- Control ---
             controls = []
-            if "control" in data:
-                for connection_name in data["control"]:
+            control_key = "control" if "control" in data else "controls" if "controls" in data else None
+            if control_key is not None:
+                for connection_name in data[control_key]:
                     controls.append(connection_names[connection_name])
 
         return Tensegrity(list(nodes.values()), connections, pins, controls, surface)

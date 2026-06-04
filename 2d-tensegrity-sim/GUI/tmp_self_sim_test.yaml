@@ -1,0 +1,30 @@
+nodes:
+  (1.0 2.0): [1.0, 2.0, 0.0]
+  (2.0 1.0): [2.0, 1.0, 0.0]
+  (1.0 1.0): [1.0, 1.0, 0.0]
+  (2.0 0.0): [2.0, 0.0, 0.0]
+  (2.0 2.0): [2.0, 2.0, 0.0]
+  (1.0 0.0): [1.0, 0.0, 0.0]
+  (1.0 3.0): [1.0, 3.0, 0.0]
+connections:
+  bars:
+  - [(1.0 0.0), (2.0 0.0)]
+  - [(1.0 1.0), (2.0 1.0)]
+  - [(1.0 2.0), (2.0 2.0)]
+  strings:
+  - [(1.0 0.0), (1.0 1.0)]
+  - [(1.0 1.0), (1.0 2.0)]
+  - [(1.0 2.0), (1.0 3.0)]
+  inside_strings: []
+builders:
+  bars:
+    stiffness: 1000
+    type: bar
+  strings:
+    stiffness: 100
+    type: string
+    initial_length_ratio: 0.95
+  inside_strings:
+    stiffness: 100
+    type: string
+    initial_length_ratio: 0.95
