@@ -299,24 +299,24 @@ builders:
     type: bar
 
   outside_strings:
-    stiffness: 0.53
+    stiffness: 0.53 # Estimated stiffness from measurement: 0.53 N/mm
     type: string
-    initial_length_ratio: 0.91
+    initial_length_ratio: 0.95 # Estimated IRL from measurement: 0.91
 
   inside_strings:
-    stiffness: 0.53
+    stiffness: 0.53 # Estimated stiffness from measurement: 0.53 N/mm
     type: string
-    initial_length_ratio: 0.89
+    initial_length_ratio: 0.87 # Estimated IRL from measurement: 0.89
 
   short_strings:
-    stiffness: 01.00
+    stiffness: 01.00 # Estimated stiffness from measurement: 1.00 N/mm
     type: string
-    initial_length_ratio: 0.95
+    initial_length_ratio: 0.89 # Estimated IRL from measurement: 0.95
 
   active_strings:
     stiffness: 100
     type: string
-    initial_length_ratio: 0.99
+    initial_length_ratio: 1.00
 
 control:
 - String1
