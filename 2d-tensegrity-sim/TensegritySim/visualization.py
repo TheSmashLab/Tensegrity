@@ -192,7 +192,9 @@ class Visualization:
     @staticmethod
     def _format_position(position: np.ndarray) -> str:
         """Formats a node position for the hover tooltip."""
-        return f"({position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f})"
+        values = np.asarray(position, dtype=float).ravel()
+        formatted = ", ".join(f"{value:.3f}" for value in values)
+        return f"({formatted})"
 
     def _ensure_hover_annotation(self):
         """Recreates the hover annotation after axes clears, if needed."""

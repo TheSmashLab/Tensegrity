@@ -2,6 +2,17 @@ import argparse
 
 from TensegritySim import YamlParser, Visualization, TensegritySolver
 
+
+def _print_requested_positions(tensegrity_system):
+    if not tensegrity_system.positions:
+        return
+
+    nodes_by_name = {node.name: node for node in tensegrity_system.nodes}
+    for node_name in tensegrity_system.positions:
+        node = nodes_by_name[node_name]
+        position = ", ".join(f"{value:.3f}" for value in node.position)
+        print(f"{node_name}: ({position})")
+
 def main(file):
     # Load the tensegrity system from the YAML file
     tensegrity_system = YamlParser.parse(file)
@@ -20,6 +31,7 @@ def main(file):
     solver = TensegritySolver(tensegrity_system, dim=2)
     solver.solve()
     viz.plot(label_nodes=False, label_connections=True)
+    _print_requested_positions(tensegrity_system)
 
     show_forces = False
 
@@ -48,6 +60,7 @@ def main(file):
 
         solver.solve()
         viz.plot(label_nodes=False, label_connections=True, label_forces=show_forces)
+        _print_requested_positions(tensegrity_system)
 
 
 if __name__ == "__main__":

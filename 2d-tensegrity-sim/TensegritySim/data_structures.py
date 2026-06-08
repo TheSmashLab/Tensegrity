@@ -132,27 +132,32 @@ class Tensegrity:
         connections (List[Connection]): A list of connections between the nodes.
         pins (Dict[str, List[bool]], optional): A dictionary representing the pinned nodes. Defaults to an empty dictionary.
         controls (List[Connection], optional): A list of control connections. Defaults to an empty list.
+        positions (List[str], optional): A list of node names whose positions should be displayed in the terminal.
         surface (Surface, optional): The surface on which the tensegrity structure is placed. Defaults to None.
     """
 
-    def __init__(self, nodes: List[Node], connections: List[Connection], pins: Dict[str, List[bool]] = None, controls: List[Connection] = None, surface: Surface = None):
+    def __init__(self, nodes: List[Node], connections: List[Connection], pins: Dict[str, List[bool]] = None, controls: List[Connection] = None, positions: List[str] = None, surface: Surface = None):
         """
         Args:
             nodes (List[Node]): A list of nodes in the tensegrity structure.
             connections (List[Connection]): A list of connections between the nodes.
             pins (Dict[str, List[bool]], optional): A dictionary representing the pinned nodes. Defaults to an empty dictionary.
             controls (List[Connection], optional): A list of control connections. Defaults to an empty list.
+            positions (List[str], optional): A list of node names whose positions should be displayed in the terminal.
             surface (Surface, optional): The surface on which the tensegrity structure is placed. Defaults to None.
         """
         if pins is None:
             pins = {}
         if controls is None:
             controls = []
+        if positions is None:
+            positions = []
 
         self.nodes = nodes
         self.connections = connections
         self.pins = pins
         self.controls = controls
+        self.positions = positions
         self.surface = surface
 
         self.control_starting_lengths = [control.initial_length for control in self.controls]

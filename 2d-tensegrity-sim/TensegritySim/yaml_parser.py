@@ -1,4 +1,5 @@
 from os.path import isfile
+import re
 import yaml
 import numpy as np
 
@@ -115,4 +116,13 @@ class YamlParser:
                 for connection_name in data[control_key]:
                     controls.append(connection_names[connection_name])
 
-        return Tensegrity(list(nodes.values()), connections, pins, controls, surface)
+            # --- Positions ---
+            positions = []
+            if "positions" in data:
+                raw_positions = data["positions"]
+                if isinstance(raw_positions, str):
+                    positions = [position.strip() for position in re.findall(r"\([^\)]+\)|\S+", raw_positions) if position.strip()]
+                else:
+                    positions = list(raw_positions)
+
+        return Tensegrity(list(nodes.values()), connections, pins, controls, positions, surface)
