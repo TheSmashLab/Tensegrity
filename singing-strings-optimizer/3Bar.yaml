@@ -1,10 +1,14 @@
 nodes:
-  Node1: [.2894, 0.3298, 0.0711]
-  Node2: [.1381, 0.2204, 0.0469]
-  Node3: [.2999, .1438, 0.0565]
-  Node4: [0.2455, 0.3252, .2738] # the rest have a -.05 to account for the height up to where the bar starts
-  Node5: [.1544, 0.2084, .2938]
-  Node6: [.2909, .2088, .2942]
+  Node1: [.053, .110, .04]
+  Node2: [.234, .115, .04]
+  Node3: [.136, .268, .04]
+  Node4: [.091, .084, .28]
+  Node5: [.222, .150, .295]
+  Node6: [.090, .24, .286]
+
+
+
+
 
 connections:
   bars:
