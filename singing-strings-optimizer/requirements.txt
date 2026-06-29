@@ -11,4 +11,4 @@ python-dateutil==2.9.0.post0
 PyYAML==6.0.2
 scipy==1.15.2
 six==1.17.0
-TensegritySim @ file:///home/smashlab/HarrisonSingingStrings/singing-strings-optimizer/tensegrity-sim
+TensegritySim @ file:///home/smashlab/Tensegrity/2d-tensegrity-sim/
