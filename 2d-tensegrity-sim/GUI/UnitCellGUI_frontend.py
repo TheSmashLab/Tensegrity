@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import tkinter.font as tkfont
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mpl_toolkits.mplot3d import Axes3D
@@ -71,6 +72,134 @@ def _format_coord(value, decimals=6):
 
 def _point_name(point, decimals=6):
     return "(" + " ".join(_format_coord(v, decimals) for v in point) + ")"
+
+
+def _configure_ui_defaults(root):
+    """Normalize Tk scaling and default fonts so widget sizes stay consistent."""
+    if getattr(root, "_ui_defaults_configured", False):
+        return
+
+    try:
+        scaling = root.winfo_fpixels("1i") / 72.0
+        if scaling > 0:
+            root.tk.call("tk", "scaling", scaling)
+    except tk.TclError:
+        pass
+
+    try:
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(family="Segoe UI", size=10)
+        tkfont.nametofont("TkTextFont").configure(family="Segoe UI", size=10)
+        tkfont.nametofont("TkMenuFont").configure(family="Segoe UI", size=10)
+        if "TkHeadingFont" in tkfont.names():
+            tkfont.nametofont("TkHeadingFont").configure(family="Segoe UI", size=10, weight="bold")
+        if "TkFixedFont" in tkfont.names():
+            tkfont.nametofont("TkFixedFont").configure(family="Consolas", size=10)
+    except tk.TclError:
+        pass
+
+    root.option_add("*Button.Font", "TkDefaultFont")
+    root.option_add("*TButton.Font", "TkDefaultFont")
+    root._ui_defaults_configured = True
+
+
+class InstructionsWindow(tk.Toplevel):
+    """Scrollable modal window that shows workflow or window-specific instructions."""
+
+    def __init__(self, parent, title, content):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("720x520")
+        self.minsize(560, 380)
+        self.resizable(True, True)
+
+        if parent.winfo_exists() and parent.winfo_viewable():
+            self.transient(parent)
+
+        frm = ttk.Frame(self, padding=12)
+        frm.pack(fill=tk.BOTH, expand=True)
+
+        tk.Label(frm, text=title, font=("Arial", 13, "bold")).pack(anchor="w", pady=(0, 8))
+
+        text_frame = ttk.Frame(frm)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+
+        scrollbar = ttk.Scrollbar(text_frame, orient="vertical")
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        text_widget = tk.Text(text_frame, wrap="word", yscrollcommand=scrollbar.set, relief="solid", bd=1)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text_widget.yview)
+        text_widget.insert("1.0", content.strip())
+        text_widget.config(state="disabled")
+
+        button_frame = ttk.Frame(frm)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
+        tk.Button(button_frame, text="Close", command=self.destroy, width=12).pack(side=tk.RIGHT)
+
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.after(10, self._safe_grab_set)
+
+    def _safe_grab_set(self):
+        try:
+            self.wait_visibility()
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+
+_WORKFLOW_OVERVIEW_TEXT = """
+1. Choose 2D / 2.5D or 3D when the app starts.
+2. In the unit cell window, draw the unit cell that will be patterned to make the tensegrity structure.
+3. Use Submit to send the finished unit cell to the structure window.
+4. In the structure window, place pins and draw cluster strings.
+5. Open Builder Details to set stiffness, file name, active strings, and surface options.
+6. Generate YAML when the structure is ready to export.
+"""
+
+_UNIT_CELL_2D_INSTRUCTIONS = """
+2D Unit Cell Window
+- Grid Settings changes the grid size and spacing. You can also add custom nodes there.
+- Use the Line Style menu to switch between bars, strings, horizontal wraps, vertical wraps, and delete.
+- Hold Ctrl and use the mouse wheel to cycle line styles quickly.
+- Click the canvas to pick grid points and draw or remove connections.
+- Clear Lines removes every connection in the current unit cell.
+- Submit sends the finished unit cell to the structure window.
+"""
+
+_STRUCTURE_2D_INSTRUCTIONS = """
+2D Structure Window
+- Structure Settings controls the pattern length and generates the full structure.
+- Use the Structure Element menu to switch between pins, unpin, and clustered strings.
+- Click the canvas to place the currently selected element.
+- Press Enter to finish a clustered string.
+- Builder Details controls stiffness, file name, active strings, and surface options.
+- Generate YAML writes the current structure to a YAML file.
+"""
+
+_UNIT_CELL_3D_INSTRUCTIONS = """
+3D Unit Cell Window
+- Grid Settings changes the 3D grid size and spacing. You can also add custom nodes there.
+- Use the Line Style menu to switch between bars, strings, X connectors, Y connectors, Z connectors, and delete.
+- Hold Ctrl and use the mouse wheel to cycle line styles quickly.
+- Click the canvas to pick grid points and draw or remove connections.
+- Clear Lines removes every connection in the current unit cell.
+- Submit sends the finished unit cell to the structure window.
+"""
+
+_STRUCTURE_3D_INSTRUCTIONS = """
+3D Structure Window
+- Structure Settings controls the pattern length and generates the full 3D structure.
+- Use the Structure Element menu to switch between pins, unpin, and clustered strings.
+- Click the canvas to place the currently selected element.
+- Press Enter to finish a clustered string.
+- Builder Details controls stiffness, file name, active strings, and surface options.
+- Generate YAML writes the current structure to a YAML file.
+"""
+
+
+def _show_instructions_window(parent, title, content):
+    return InstructionsWindow(parent, title, content)
 
 def _prune_multinode_segments(segment_pairs, multinode_strings):
     """Remove any single-segment strings that are covered by multinode string paths."""
@@ -172,6 +301,7 @@ class UnitCellBuilderApp:
         self.structure_window = None
 
         self.root = root
+        _configure_ui_defaults(self.root)
         self.root.title("Unit Cell Builder")
         self.root.geometry("800x600")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -188,6 +318,10 @@ class UnitCellBuilderApp:
         self.grid_settings_btn = tk.Button(line_control_frame, text="Grid Settings ▶", command=self.grid_settings)
         self.grid_settings_btn.pack(side=tk.LEFT, padx=5)
         self.add_button_tooltip(self.grid_settings_btn, "Adjust grid size and spacing")
+
+        self.instructions_btn = tk.Button(line_control_frame, text="Instructions", command=self.open_instructions)
+        self.instructions_btn.pack(side=tk.LEFT, padx=5)
+        self.add_button_tooltip(self.instructions_btn, "Open instructions for the unit cell window")
 
         # Line style selection with dropdown menu
         self.line_style = tk.StringVar(value="bar")
@@ -355,6 +489,9 @@ class UnitCellBuilderApp:
             "y_distance": self.y_spacing
         }
         GridSettingsWindow(self.root, initial_settings, self.apply_grid_settings, self.add_custom_node)
+
+    def open_instructions(self):
+        _show_instructions_window(self.root, "Unit Cell Instructions", _UNIT_CELL_2D_INSTRUCTIONS)
 
     def generate_grid(self):
         """Generate a uniform grid of points based on user input."""
@@ -526,6 +663,7 @@ class StructureBuilderApp:
     def __init__(self, root, unit_cell):
         
         self.root = root
+        _configure_ui_defaults(self.root)
         self.root.title("Structure Builder")
         self.root.geometry("800x600")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -552,6 +690,10 @@ class StructureBuilderApp:
         horizontal_wrap_check.pack(side=tk.LEFT, padx=5)
         self.horizontal_wrap_check = horizontal_wrap_check
         self.add_button_tooltip(horizontal_wrap_check, "Enable cylindrical wrapping")
+
+        self.instructions_btn = tk.Button(top_control_frame, text="Instructions", command=self.open_instructions)
+        self.instructions_btn.pack(side=tk.LEFT, padx=5)
+        self.add_button_tooltip(self.instructions_btn, "Open instructions for the structure window")
 
         self.x_pattern = tk.IntVar(value=5)
         self.y_pattern = tk.IntVar(value=5)
@@ -686,6 +828,9 @@ class StructureBuilderApp:
             on_generate=self.generate_structure,
             generate_button_text="Generate Structure",
         )
+
+    def open_instructions(self):
+        _show_instructions_window(self.root, "Structure Instructions", _STRUCTURE_2D_INSTRUCTIONS)
 
     def _connector_vector_2d(self, connectors, fallback):
         """Get a stable direction vector from connector pairs, with fallback."""
@@ -1555,6 +1700,7 @@ class UnitCellBuilderApp3D:
         self.structure_window = None
 
         self.root = root
+        _configure_ui_defaults(self.root)
         self.root.title("Unit Cell Builder - 3D Mode")
         self.root.geometry("1000x700")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -1571,6 +1717,10 @@ class UnitCellBuilderApp3D:
         self.grid_settings_btn = tk.Button(line_control_frame, text="Grid Settings ▶", command=self.grid_settings)
         self.grid_settings_btn.pack(side=tk.LEFT, padx=5)
         self.add_button_tooltip(self.grid_settings_btn, "Adjust 3D grid size and spacing")
+
+        self.instructions_btn = tk.Button(line_control_frame, text="Instructions", command=self.open_instructions)
+        self.instructions_btn.pack(side=tk.LEFT, padx=5)
+        self.add_button_tooltip(self.instructions_btn, "Open instructions for the 3D unit cell window")
 
         # Line style selection with dropdown menu
         self.line_style = tk.StringVar(value="bar")
@@ -1701,6 +1851,9 @@ class UnitCellBuilderApp3D:
             "z_distance": self.z_spacing
         }
         GridSettingsWindow3D(self.root, initial_settings, self.apply_grid_settings, self.add_custom_node)
+
+    def open_instructions(self):
+        _show_instructions_window(self.root, "3D Unit Cell Instructions", _UNIT_CELL_3D_INSTRUCTIONS)
 
     def generate_grid(self):
         """Generate a uniform 3D grid of points."""
@@ -2176,12 +2329,14 @@ class StructureSettingsWindow(tk.Toplevel):
 
     def _generate(self):
         self.on_generate()
+        self.destroy()
 
 class StructureBuilderApp3D:
     """3D Structure Builder for generating patterns from 3D unit cells."""
     def __init__(self, root, unit_cell, bars, strings, x_connectors, y_connectors, z_connectors, points):
         
         self.root = root
+        _configure_ui_defaults(self.root)
         self.root.title("3D Structure Builder")
         self.root.geometry("1000x700")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -2234,6 +2389,10 @@ class StructureBuilderApp3D:
         self.structure_settings_btn = tk.Button(top_control_frame, text="Structure Settings ▶", command=self.open_structure_settings)
         self.structure_settings_btn.pack(side=tk.LEFT, padx=5)
         self.add_button_tooltip(self.structure_settings_btn, "Set pattern lengths and generate 3D structure")
+
+        self.instructions_btn = tk.Button(top_control_frame, text="Instructions", command=self.open_instructions)
+        self.instructions_btn.pack(side=tk.LEFT, padx=5)
+        self.add_button_tooltip(self.instructions_btn, "Open instructions for the 3D structure window")
 
         self.structure_element = tk.StringVar(value="x_pin")
         tk.Label(top_control_frame, text="Structure Element:").pack(side=tk.LEFT, padx=5)
@@ -2342,6 +2501,9 @@ class StructureBuilderApp3D:
             on_generate=self.generate_structure,
             generate_button_text="Generate 3D Structure",
         )
+
+    def open_instructions(self):
+        _show_instructions_window(self.root, "3D Structure Instructions", _STRUCTURE_3D_INSTRUCTIONS)
 
     def _axis_boundary_measure_3d(self, points, axis, side):
         """Approximate boundary face size (diagonal) for self-similar scaling ratio."""
@@ -2820,8 +2982,9 @@ class StartupDialog(tk.Toplevel):
     """Dialog to choose between 2D and 3D structure modes."""
     def __init__(self, parent):
         super().__init__(parent)
+        _configure_ui_defaults(parent)
         self.title("Unit Cell Builder - Dimension Selection")
-        self.geometry("500x400")
+        self.geometry("500x500")
         if parent.winfo_viewable():
             self.transient(parent)
         self.resizable(False, False)
@@ -2846,6 +3009,25 @@ class StartupDialog(tk.Toplevel):
             font=("Arial", 14, "bold")
         )
         title_label.pack()
+
+        workflow_frame = ttk.LabelFrame(self, text="Workflow Overview", padding=10)
+        workflow_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 10))
+
+        workflow_scrollbar = ttk.Scrollbar(workflow_frame, orient="vertical")
+        workflow_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        workflow_text = tk.Text(
+            workflow_frame,
+            wrap="word",
+            height=10,
+            yscrollcommand=workflow_scrollbar.set,
+            relief="solid",
+            bd=1,
+        )
+        workflow_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        workflow_scrollbar.config(command=workflow_text.yview)
+        workflow_text.insert("1.0", _WORKFLOW_OVERVIEW_TEXT.strip())
+        workflow_text.config(state="disabled")
         
         # Buttons frame
         button_frame = tk.Frame(self)
