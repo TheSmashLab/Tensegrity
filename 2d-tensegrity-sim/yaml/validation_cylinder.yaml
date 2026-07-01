@@ -185,7 +185,7 @@ connections:
   - [(300 90), (270 120)]
   - [(300 150), (270 180)]
 
-  short_strings:
+  vertical_strings:
   - [(0 0), (0 30)]
   - [(9), (0 90)]
   - [(0 120), (0 150)]
@@ -230,6 +230,30 @@ connections:
   - [(2), (1)]
   - [(270 120), (270 90)]
   - [(270 180), (270 150)]
+  - [(60 60), (10)]
+  - [(60 120), (60 90)]
+  - [(60 180), (60 150)]
+  - [(120 60), (120 30)]
+  - [(120 120), (120 90)]
+  - [(5), (120 150)]
+  - [(180 60), (180 30)]
+  - [(180 120), (180 90)]
+  - [(11), (180 150)]
+  - [(3), (240 30)]
+  - [(240 120), (4)]
+  - [(240 180), (240 150)]
+  - [(60 0), (10)]
+  - [(60 60), (60 90)]
+  - [(60 120), (60 150)]
+  - [(120 60), (120 90)]
+  - [(120 120), (120 150)]
+  - [(180 60), (180 90)]
+  - [(180 120), (180 150)]
+  - [(240 0), (240 30)]
+  - [(3), (4)]
+  - [(240 120), (240 150)]
+
+  horizontal_strings:
   - [(30 30), (10)]
   - [(30 90), (60 90)]
   - [(12), (60 150)]
@@ -259,28 +283,6 @@ connections:
   - [(3), (2)]
   - [(240 120), (270 120)]
   - [(240 180), (270 180)]
-  - [(60 60), (10)]
-  - [(60 120), (60 90)]
-  - [(60 180), (60 150)]
-  - [(120 60), (120 30)]
-  - [(120 120), (120 90)]
-  - [(5), (120 150)]
-  - [(180 60), (180 30)]
-  - [(180 120), (180 90)]
-  - [(11), (180 150)]
-  - [(3), (240 30)]
-  - [(240 120), (4)]
-  - [(240 180), (240 150)]
-  - [(60 0), (10)]
-  - [(60 60), (60 90)]
-  - [(60 120), (60 150)]
-  - [(120 60), (120 90)]
-  - [(120 120), (120 150)]
-  - [(180 60), (180 90)]
-  - [(180 120), (180 150)]
-  - [(240 0), (240 30)]
-  - [(3), (4)]
-  - [(240 120), (240 150)]
 
   active_strings:
   - String1: [(300 0), (300 30), (2), (3), (4), (210 120), (180 120), (180 150), (150 180), (5), (6)]
@@ -299,24 +301,29 @@ builders:
     type: bar
 
   outside_strings:
-    stiffness: 0.53 # Estimated stiffness from measurement: 0.53 N/mm
+    stiffness: .75 # Estimated stiffness from measurement: 0.53 N/mm
     type: string
-    initial_length_ratio: 0.95 # Estimated IRL from measurement: 0.91
+    initial_length_ratio: 0.99 # Estimated IRL from measurement: 0.91
 
   inside_strings:
-    stiffness: 0.53 # Estimated stiffness from measurement: 0.53 N/mm
+    stiffness: .45 # Estimated stiffness from measurement: 0.53 N/mm
     type: string
-    initial_length_ratio: 0.87 # Estimated IRL from measurement: 0.89
+    initial_length_ratio: 0.95 # Estimated IRL from measurement: 0.89
 
-  short_strings:
-    stiffness: 01.00 # Estimated stiffness from measurement: 1.00 N/mm
+  vertical_strings:
+    stiffness: .75 # Estimated stiffness from measurement: 1.00 N/mm
     type: string
-    initial_length_ratio: 0.89 # Estimated IRL from measurement: 0.95
+    initial_length_ratio: .99 # Estimated IRL from measurement: 0.95
+
+  horizontal_strings:
+    stiffness: .75 # Estimated stiffness from measurement: 1.00 N/mm
+    type: string
+    initial_length_ratio: .85 # Estimated IRL from measurement: 0.95
 
   active_strings:
     stiffness: 100
     type: string
-    initial_length_ratio: 1.00
+    initial_length_ratio: 1
 
 control:
 - String1
