@@ -3,7 +3,7 @@ from io import StringIO
 from contextlib import redirect_stdout
 
 
-from UnitCellGUI_backend import UnitCell, Structure
+from UnitCellGUI_backend import Structure, Structure3D, UnitCell, UnitCell3D
 
 
 def test_generate_grid():
@@ -141,6 +141,75 @@ def test_submit_values(capsys):
     assert "[(2, 2), (3, 3)]" in output
 
 
+def test_generate_grid_3d_unit_cell():
+    uc = UnitCell3D()
+
+    grid = uc.generate_grid(2, 1, 2, 1, 1, 2)
+
+    assert grid == [(0, 0, 0), (1, 0, 0), (0, 0, 2), (1, 0, 2)]
+
+
+def test_create_lines_3d_types_and_duplicate_clicks():
+    uc = UnitCell3D()
+
+    uc.create_lines((0, 0, 0), "bar")
+    uc.create_lines((0, 0, 0), "bar")
+    assert uc.selected_points == [(0, 0, 0)]
+    uc.create_lines((1, 0, 0), "bar")
+    assert uc.bars == [[(0, 0, 0), (1, 0, 0)]]
+    assert uc.selected_points == []
+
+    uc.create_lines((0, 0, 0), "string")
+    uc.create_lines((0, 1, 0), "string")
+    assert uc.strings == [[(0, 0, 0), (0, 1, 0)]]
+
+    uc.create_lines((0, 0, 0), "x_connector")
+    uc.create_lines((1, 0, 0), "x_connector")
+    assert uc.x_connectors == [[(0, 0, 0), (1, 0, 0)]]
+
+    uc.create_lines((0, 0, 0), "y_connector")
+    uc.create_lines((0, 1, 0), "y_connector")
+    assert uc.y_connectors == [[(0, 0, 0), (0, 1, 0)]]
+
+    uc.create_lines((0, 0, 0), "z_connector")
+    uc.create_lines((0, 0, 1), "z_connector")
+    assert uc.z_connectors == [[(0, 0, 0), (0, 0, 1)]]
+
+
+def test_create_lines_3d_unknown_style_defaults_to_string():
+    uc = UnitCell3D()
+
+    uc.create_lines((0, 0, 0), "unknown")
+    uc.create_lines((1, 1, 1), "unknown")
+
+    assert uc.strings == [[(0, 0, 0), (1, 1, 1)]]
+
+
+def test_delete_lines_3d_and_clear_lines():
+    uc = UnitCell3D()
+    uc.create_lines((0, 0, 0), "bar")
+    uc.create_lines((1, 0, 0), "bar")
+    uc.create_lines((0, 0, 0), "x_connector")
+    uc.create_lines((1, 0, 0), "x_connector")
+
+    uc.create_lines((1, 0, 0), "delete")
+    uc.create_lines((0, 0, 0), "delete")
+
+    assert uc.bars == []
+    assert uc.x_connectors == []
+
+    uc.create_lines((0, 0, 0), "string")
+    uc.create_lines((0, 1, 0), "string")
+    uc.clear_lines()
+
+    assert uc.selected_points == []
+    assert uc.bars == []
+    assert uc.strings == []
+    assert uc.x_connectors == []
+    assert uc.y_connectors == []
+    assert uc.z_connectors == []
+
+
 def test_generate_yaml_does_not_reuse_previous_pin_state(tmp_path):
     structure = Structure()
     structure.points = [(0, 0), (1, 0)]
@@ -161,3 +230,190 @@ def test_generate_yaml_does_not_reuse_previous_pin_state(tmp_path):
     structure.generate_yaml(100, 1000, 0.95, 0.95, [], str(second_file))
     second_data = yaml.safe_load((tmp_path / "second.yaml").read_text())
     assert "pins" not in second_data
+
+
+def test_generate_self_similar_grid_2d_scales_along_axis():
+    structure = Structure()
+
+    points, bars, strings = structure.generate_self_similar_grid(
+        bars=[
+            [(0, 0), (0, 2)],
+            [(2, 0), (2, 1)],
+        ],
+        strings=[
+            [(0, 0), (2, 0)],
+        ],
+        hwraps=[[(0, 0), (2, 0)]],
+        vwraps=[[(0, 0), (0, 1)]],
+        axis="x",
+        count=2,
+    )
+
+    assert [(0.0, 0.0), (0.0, 2.0)] in bars
+    assert [(2.0, 0.0), (2.0, 1.0)] in bars
+    assert [(2.0, 0.0), (2.0, 1.0)] in bars
+    assert [(3.0, 0.0), (3.0, 0.5)] in bars
+    assert [(0.0, 0.0), (2.0, 0.0)] in strings
+    assert [(2.0, 0.0), (3.0, 0.0)] in strings
+    assert (3.0, 0.5) in points
+
+
+def test_generate_self_similar_grid_2d_handles_empty_or_zero_count():
+    structure = Structure()
+
+    assert structure.generate_self_similar_grid([], [], [], [], "x", 2) == ([], [], [])
+    assert structure.generate_self_similar_grid(
+        [[(0, 0), (1, 0)]],
+        [],
+        [],
+        [],
+        "x",
+        0,
+    ) == ([], [], [])
+
+
+def test_generate_yaml_3d_exports_pins_controls_and_multinode_strings(tmp_path):
+    structure = Structure3D()
+    file_base = tmp_path / "structure_3d"
+
+    structure.generate_yaml(
+        structure_points=[(0, 0, 0), (1, 0, 0), (1, 1, 0)],
+        structure_bars=[[(0, 0, 0), (1, 0, 0)]],
+        structure_strings=[[(1, 0, 0), (1, 1, 0)]],
+        multinode_strings=[{"name": "String1", "points": [(0, 0, 0), (1, 0, 0), (1, 1, 0)]}],
+        x_pins=[(0, 0, 0)],
+        y_pins=[(0, 0, 0), (1, 1, 0)],
+        z_pins=[(1, 1, 0)],
+        string_stiffness=100,
+        bar_stiffness=1000,
+        string_initial_length_ratio=0.95,
+        controls=["String1", "", "String1"],
+        file_name=str(file_base),
+    )
+
+    data = yaml.safe_load((tmp_path / "structure_3d.yaml").read_text())
+
+    assert data["nodes"]["(0 0 0)"] == [0.0, 0.0, 0.0]
+    assert data["pins"]["(0 0 0)"] == [True, True, False]
+    assert data["pins"]["(1 1 0)"] == [False, True, True]
+    assert data["connections"]["bars"] == [["(0 0 0)", "(1 0 0)"]]
+    assert ["(1 0 0)", "(1 1 0)"] in data["connections"]["strings"]
+    assert {"String1": ["(0 0 0)", "(1 0 0)", "(1 1 0)"]} in data["connections"]["strings"]
+    assert data["control"] == ["String1"]
+
+
+def test_generate_yaml_3d_omits_empty_pins_and_controls(tmp_path):
+    structure = Structure3D()
+    file_base = tmp_path / "minimal_3d"
+
+    structure.generate_yaml(
+        structure_points=[(0, 0, 0), (1, 0, 0)],
+        structure_bars=[],
+        structure_strings=[[(0, 0, 0), (1, 0, 0)]],
+        multinode_strings=[],
+        x_pins=[],
+        y_pins=[],
+        z_pins=[],
+        string_stiffness=100,
+        bar_stiffness=1000,
+        string_initial_length_ratio=0.95,
+        controls=[],
+        file_name=str(file_base),
+    )
+
+    data = yaml.safe_load((tmp_path / "minimal_3d.yaml").read_text())
+
+    assert "pins" not in data
+    assert "control" not in data
+
+
+def test_generate_grid_3d_repeats_with_connector_vectors():
+    structure = Structure3D()
+
+    points, bars, strings = structure.generate_grid(
+        points=[(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)],
+        bars=[[(0, 0, 0), (1, 0, 0)]],
+        strings=[[(0, 0, 0), (0, 1, 0)]],
+        x_connectors=[[(0, 0, 0), (2, 0, 0)]],
+        y_connectors=[[(0, 0, 0), (0, 3, 0)]],
+        z_connectors=[[(0, 0, 0), (0, 0, 4)]],
+        x_reps=2,
+        y_reps=1,
+        z_reps=2,
+    )
+
+    assert [(0, 0, 0), (1, 0, 0)] in bars
+    assert [(2.0, 0.0, 4.0), (3.0, 0.0, 4.0)] in bars
+    assert [(0, 0, 0), (0, 1, 0)] in strings
+    assert [(2.0, 0.0, 4.0), (2.0, 1.0, 4.0)] in strings
+    assert set(points) == {
+        (0, 0, 0),
+        (1, 0, 0),
+        (0, 1, 0),
+        (0.0, 0.0, 4.0),
+        (1.0, 0.0, 4.0),
+        (0.0, 1.0, 4.0),
+        (2.0, 0.0, 0.0),
+        (3.0, 0.0, 0.0),
+        (2.0, 1.0, 0.0),
+        (2.0, 0.0, 4.0),
+        (3.0, 0.0, 4.0),
+        (2.0, 1.0, 4.0),
+    }
+
+
+def test_generate_grid_3d_prunes_multinode_segments():
+    structure = Structure3D()
+
+    points, bars, strings = structure.generate_grid(
+        points=[(0, 0, 0), (1, 0, 0), (2, 0, 0)],
+        bars=[],
+        strings=[[(0, 0, 0), (1, 0, 0)], [(1, 0, 0), (2, 0, 0)]],
+        x_connectors=[],
+        y_connectors=[],
+        z_connectors=[],
+        x_reps=1,
+        y_reps=1,
+        z_reps=1,
+        multinode_strings=[{"name": "String1", "points": [(0, 0, 0), (1, 0, 0), (2, 0, 0)]}],
+    )
+
+    assert bars == []
+    assert strings == []
+    assert set(points) == {(0, 0, 0), (1, 0, 0), (2, 0, 0)}
+
+
+def test_generate_self_similar_grid_3d_scales_along_axis():
+    structure = Structure3D()
+
+    points, bars, strings = structure.generate_self_similar_grid(
+        bars=[
+            [(0, 0, 0), (0, 1, 0)],
+            [(2, 0, 0), (2, 2, 0)],
+        ],
+        strings=[
+            [(0, 0, 0), (2, 0, 0)],
+        ],
+        axis="x",
+        count=2,
+    )
+
+    assert [(0, 0, 0), (0, 1, 0)] in bars
+    assert [(2.0, 0.0, 0.0), (2.0, 2.0, 0.0)] in bars
+    assert [(2.0, 0.0, 0.0), (2.0, 2.0, 0.0)] in bars
+    assert [(6.0, 0.0, 0.0), (6.0, 4.0, 0.0)] in bars
+    assert [(0, 0, 0), (2, 0, 0)] in strings
+    assert [(2.0, 0.0, 0.0), (6.0, 0.0, 0.0)] in strings
+    assert (6.0, 4.0, 0.0) in points
+
+
+def test_generate_self_similar_grid_3d_handles_empty_or_zero_count():
+    structure = Structure3D()
+
+    assert structure.generate_self_similar_grid([], [], "x", 2) == ([], [], [])
+    assert structure.generate_self_similar_grid(
+        [[(0, 0, 0), (1, 0, 0)]],
+        [],
+        "x",
+        0,
+    ) == ([], [], [])

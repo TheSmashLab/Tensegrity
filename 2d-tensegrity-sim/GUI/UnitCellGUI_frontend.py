@@ -6,7 +6,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import UnitCellGUI_backend as be
-from yaml_utils import BlockList, point_name, round_coord, write_yaml_file
 
 
 def _configure_ui_defaults(root):
@@ -137,21 +136,7 @@ def _show_instructions_window(parent, title, content):
     return InstructionsWindow(parent, title, content)
 
 def _prune_multinode_segments(segment_pairs, multinode_strings):
-    """Remove any single-segment strings that are covered by multinode string paths."""
-    excluded_segments = set()
-    for entry in multinode_strings or []:
-        points = entry.get("points", entry) if isinstance(entry, dict) else entry
-        if len(points) < 2:
-            continue
-        for i in range(len(points) - 1):
-            excluded_segments.add(frozenset((tuple(points[i]), tuple(points[i + 1]))))
-
-    filtered_segments = []
-    for pair in segment_pairs or []:
-        segment_key = frozenset((tuple(pair[0]), tuple(pair[1])))
-        if segment_key not in excluded_segments:
-            filtered_segments.append(pair)
-    return filtered_segments
+    return be.prune_multinode_segments(segment_pairs, multinode_strings)
 
 def close_root_if_last_window(root):
     """Close the Tk root if no visible root and no child toplevel windows remain."""
@@ -768,143 +753,19 @@ class StructureBuilderApp:
     def open_instructions(self):
         _show_instructions_window(self.root, "Structure Instructions", _STRUCTURE_2D_INSTRUCTIONS)
 
-    def _connector_vector_2d(self, connectors, fallback):
-        """Get a stable direction vector from connector pairs, with fallback."""
-        for pair in connectors:
-            vector = np.array([
-                pair[1][0] - pair[0][0],
-                pair[1][1] - pair[0][1],
-            ], dtype=float)
-            if np.linalg.norm(vector) > 1e-9:
-                return vector
-        return np.array(fallback, dtype=float)
-
-    def _boundary_span_local_2d(self, local_points, axis, side_value):
-        """Measure side length on a local boundary line (used for side-matching scale ratio)."""
-        tol = 1e-7
-        if axis == "x":
-            boundary = [p for p in local_points if abs(p[0] - side_value) < tol]
-            values = [p[1] for p in boundary] if boundary else [p[1] for p in local_points]
-        else:
-            boundary = [p for p in local_points if abs(p[1] - side_value) < tol]
-            values = [p[0] for p in boundary] if boundary else [p[0] for p in local_points]
-
-        if len(values) < 2:
-            return 1.0
-        span = max(values) - min(values)
-        return span if span > 1e-9 else 1.0
-
-    def _build_self_similar_2d(self, axis, count):
-        """Build self-similar 2D sequence aligned using horizontal/vertical connectors."""
-        if count < 1:
-            return [], [], []
-
-        base_pairs_bars = self.unit.bars
-        base_pairs_strings = self.unit.strings
-        connector_pairs = self.unit.hw + self.unit.vw
-        base_points = list({tuple(p) for pair in (base_pairs_bars + base_pairs_strings + connector_pairs) for p in pair})
-
-        if not base_points:
-            return [], [], []
-
-        x_coords = [p[0] for p in base_points]
-        y_coords = [p[1] for p in base_points]
-        fallback_x = (max(x_coords) - min(x_coords), 0.0)
-        fallback_y = (0.0, max(y_coords) - min(y_coords))
-
-        x_vec = self._connector_vector_2d(self.unit.hw, fallback_x)
-        y_vec = self._connector_vector_2d(self.unit.vw, fallback_y)
-
-        basis = np.column_stack((x_vec, y_vec))
-        if abs(np.linalg.det(basis)) < 1e-9:
-            basis = np.array([[1.0, 0.0], [0.0, 1.0]])
-        inv_basis = np.linalg.inv(basis)
-
-        origin = np.array(base_points[0], dtype=float)
-        local_points = [inv_basis @ (np.array(p, dtype=float) - origin) for p in base_points]
-
-        min_a = min(lp[0] for lp in local_points)
-        max_a = max(lp[0] for lp in local_points)
-        min_b = min(lp[1] for lp in local_points)
-        max_b = max(lp[1] for lp in local_points)
-        span_a = max_a - min_a if (max_a - min_a) > 1e-9 else 1.0
-        span_b = max_b - min_b if (max_b - min_b) > 1e-9 else 1.0
-
-        # Determine side lengths at opposite boundaries and pick direction so cells
-        # progress toward the smaller side while matching connecting side lengths.
-        if axis == "x":
-            low_side = self._boundary_span_local_2d(local_points, "x", min_a)
-            high_side = self._boundary_span_local_2d(local_points, "x", max_a)
-            span_axis = span_a
-        else:
-            low_side = self._boundary_span_local_2d(local_points, "y", min_b)
-            high_side = self._boundary_span_local_2d(local_points, "y", max_b)
-            span_axis = span_b
-
-        if high_side <= low_side:
-            in_side = "low"   # New cell enters on lower boundary and exits at higher boundary.
-            out_side = "high"
-            delta = span_axis
-            scale_ratio = high_side / low_side
-        else:
-            in_side = "high"  # New cell enters on higher boundary and exits at lower boundary.
-            out_side = "low"
-            delta = -span_axis
-            scale_ratio = low_side / high_side
-
-        if not np.isfinite(scale_ratio) or scale_ratio <= 1e-9:
-            scale_ratio = 1.0
-
-        boundary_offset = 0.0
-        structure_bars = []
-        structure_strings = []
-        structure_points = []
-
-        for i in range(count):
-            scale = scale_ratio ** i
-
-            def transform_point(point):
-                local = inv_basis @ (np.array(point, dtype=float) - origin)
-
-                if axis == "x":
-                    in_val = min_a if in_side == "low" else max_a
-                    a = (local[0] - in_val) * scale + boundary_offset
-                    b = (local[1] - min_b) * scale
-                else:
-                    in_val = min_b if in_side == "low" else max_b
-                    b = (local[1] - in_val) * scale + boundary_offset
-                    a = (local[0] - min_a) * scale
-
-                if axis == "x":
-                    local_out = np.array([a, b], dtype=float)
-                else:
-                    local_out = np.array([a, b], dtype=float)
-                world = origin + basis @ local_out
-                return (float(world[0]), float(world[1]))
-
-            for pair in base_pairs_bars:
-                p1 = transform_point(pair[0])
-                p2 = transform_point(pair[1])
-                structure_bars.append([p1, p2])
-                structure_points.extend([p1, p2])
-
-            for pair in base_pairs_strings:
-                p1 = transform_point(pair[0])
-                p2 = transform_point(pair[1])
-                structure_strings.append([p1, p2])
-                structure_points.extend([p1, p2])
-
-            boundary_offset += delta * scale
-
-        unique_points = list({tuple(p) for p in structure_points})
-        return unique_points, structure_bars, structure_strings
-
     def _build_pattern_geometry_2d(self):
         """Generate either regular tiled pattern or self-similar sequence based on settings."""
         mode = self.self_similar_pattern.get().lower()
         if mode in ("x", "y"):
             count = self.x_pattern.get() if mode == "x" else self.y_pattern.get()
-            points, bars, strings = self._build_self_similar_2d(mode, count)
+            points, bars, strings = self.structure.generate_self_similar_grid(
+                self.unit.bars,
+                self.unit.strings,
+                self.unit.hw,
+                self.unit.vw,
+                mode,
+                count,
+            )
             return points, bars, strings, True
 
         x_pattern = self.x_pattern.get()
@@ -1637,7 +1498,7 @@ class GridSettingsWindow(tk.Toplevel):
 class UnitCellBuilderApp3D:
     """3D version of the Unit Cell Builder App."""
     def __init__(self, root):
-        self.unit = be.UnitCell()
+        self.unit = be.UnitCell3D()
         self.path = []
         self.structure_window = None
 
@@ -1771,12 +1632,12 @@ class UnitCellBuilderApp3D:
         # Initialize data structures
         self.points = []
         self.custom_points = []
-        self.selected_points = []
-        self.bars = []
-        self.strings = []
-        self.x_connectors = []
-        self.y_connectors = []
-        self.z_connectors = []
+        self.selected_points = self.unit.selected_points
+        self.bars = self.unit.bars
+        self.strings = self.unit.strings
+        self.x_connectors = self.unit.x_connectors
+        self.y_connectors = self.unit.y_connectors
+        self.z_connectors = self.unit.z_connectors
     
         # Generate initial grid
         self.generate_grid()
@@ -1805,12 +1666,14 @@ class UnitCellBuilderApp3D:
         self.ax.set_zlabel('Z')
 
         # Create 3D grid points
-        self.points = [
-            (x * self.x_spacing, y * self.y_spacing, z * self.z_spacing) 
-            for z in range(self.z_count) 
-            for y in range(self.y_count) 
-            for x in range(self.x_count)
-        ]
+        self.points = self.unit.generate_grid(
+            self.x_count,
+            self.y_count,
+            self.z_count,
+            self.x_spacing,
+            self.y_spacing,
+            self.z_spacing,
+        )
         for point in self.custom_points:
             if point not in self.points:
                 self.points.append(point)
@@ -1820,12 +1683,7 @@ class UnitCellBuilderApp3D:
             x_vals, y_vals, z_vals = zip(*self.points)
             self.ax.scatter(x_vals, y_vals, z_vals, color="black", s=50, picker=5)
 
-        self.selected_points.clear()
-        self.bars.clear()
-        self.strings.clear()
-        self.x_connectors.clear()
-        self.y_connectors.clear()
-        self.z_connectors.clear()
+        self.unit.clear_lines()
         self.canvas.draw()
 
     def add_custom_node(self, point):
@@ -1889,41 +1747,7 @@ class UnitCellBuilderApp3D:
                 return
             
             clicked_point = self.points[ind]
-            
-            if clicked_point in self.selected_points:
-                return
-
-            self.selected_points.append(clicked_point)
-
-            if len(self.selected_points) == 2:
-                line_style = self.line_style.get()
-                if line_style == "bar":
-                    self.bars.append(self.selected_points.copy())
-                elif line_style == "string":
-                    self.strings.append(self.selected_points.copy())
-                elif line_style == "x_connector":
-                    self.x_connectors.append(self.selected_points.copy())
-                elif line_style == "y_connector":
-                    self.y_connectors.append(self.selected_points.copy())
-                elif line_style == "z_connector":
-                    self.z_connectors.append(self.selected_points.copy())
-                elif line_style == "delete":
-                    for pair in self.bars[:]:
-                        if set(pair) == set(self.selected_points):
-                            self.bars.remove(pair)
-                    for pair in self.strings[:]:
-                        if set(pair) == set(self.selected_points):
-                            self.strings.remove(pair)
-                    for pair in self.x_connectors[:]:
-                        if set(pair) == set(self.selected_points):
-                            self.x_connectors.remove(pair)
-                    for pair in self.y_connectors[:]:
-                        if set(pair) == set(self.selected_points):
-                            self.y_connectors.remove(pair)
-                    for pair in self.z_connectors[:]:
-                        if set(pair) == set(self.selected_points):
-                            self.z_connectors.remove(pair)
-                self.selected_points.clear()
+            self.unit.create_lines(clicked_point, self.line_style.get())
             
             self.redraw_3d_graph()
         except Exception as e:
@@ -1968,11 +1792,7 @@ class UnitCellBuilderApp3D:
     def clear_lines(self):
         """Clear all drawn lines with confirmation."""
         if messagebox.askyesno("Confirm Clear", "Are you sure you want to clear all lines?"):
-            self.bars.clear()
-            self.strings.clear()
-            self.x_connectors.clear()
-            self.y_connectors.clear()
-            self.z_connectors.clear()
+            self.unit.clear_lines()
             self.generate_grid()
 
     def _draw_connector_guides(self, connector, axis, color):
@@ -2291,6 +2111,7 @@ class StructureBuilderApp3D:
         self.z_connectors = z_connectors
         self.points = points
         self.supports_cylinder_surface = False
+        self.structure_exporter = be.Structure3D()
 
         self.x_pins = []
         self.y_pins = []
@@ -2448,190 +2269,6 @@ class StructureBuilderApp3D:
     def open_instructions(self):
         _show_instructions_window(self.root, "3D Structure Instructions", _STRUCTURE_3D_INSTRUCTIONS)
 
-    def _axis_boundary_measure_3d(self, points, axis, side):
-        """Approximate boundary face size (diagonal) for self-similar scaling ratio."""
-        if not points:
-            return 1.0
-        tol = 1e-9
-        idx = {"x": 0, "y": 1, "z": 2}[axis]
-        values = [p[idx] for p in points]
-        target = min(values) if side == "min" else max(values)
-        boundary = [p for p in points if abs(p[idx] - target) < tol]
-        if not boundary:
-            boundary = points
-
-        if axis == "x":
-            span_a = max(p[1] for p in boundary) - min(p[1] for p in boundary) if len(boundary) > 1 else 0.0
-            span_b = max(p[2] for p in boundary) - min(p[2] for p in boundary) if len(boundary) > 1 else 0.0
-        elif axis == "y":
-            span_a = max(p[0] for p in boundary) - min(p[0] for p in boundary) if len(boundary) > 1 else 0.0
-            span_b = max(p[2] for p in boundary) - min(p[2] for p in boundary) if len(boundary) > 1 else 0.0
-        else:
-            span_a = max(p[0] for p in boundary) - min(p[0] for p in boundary) if len(boundary) > 1 else 0.0
-            span_b = max(p[1] for p in boundary) - min(p[1] for p in boundary) if len(boundary) > 1 else 0.0
-
-        diag = float(np.sqrt(span_a ** 2 + span_b ** 2))
-        return diag if diag > tol else 1.0
-
-    def _build_self_similar_3d(self, axis, count):
-        """Build repeated 3D bars/strings with uniform scaling along one selected axis."""
-        if count < 1:
-            return [], [], []
-
-        base_pairs_bars = self.bars
-        base_pairs_strings = self.strings
-        base_points = list({tuple(p) for pair in (base_pairs_bars + base_pairs_strings) for p in pair})
-
-        if not base_points:
-            return [], [], []
-
-        min_x = min(p[0] for p in base_points)
-        min_y = min(p[1] for p in base_points)
-        min_z = min(p[2] for p in base_points)
-        span_x = max(p[0] for p in base_points) - min_x
-        span_y = max(p[1] for p in base_points) - min_y
-        span_z = max(p[2] for p in base_points) - min_z
-
-        axis_span_map = {"x": span_x, "y": span_y, "z": span_z}
-        axis_span = axis_span_map[axis] if axis_span_map[axis] > 1e-9 else 1.0
-
-        min_face = self._axis_boundary_measure_3d(base_points, axis, "min")
-        max_face = self._axis_boundary_measure_3d(base_points, axis, "max")
-        scale_ratio = max_face / min_face if min_face > 1e-9 else 1.0
-        if not np.isfinite(scale_ratio) or scale_ratio <= 1e-9:
-            scale_ratio = 1.0
-
-        offset = 0.0
-        structure_bars = []
-        structure_strings = []
-        structure_points = []
-
-        for i in range(count):
-            scale = scale_ratio ** i
-
-            def transform_point(point):
-                x = (point[0] - min_x) * scale
-                y = (point[1] - min_y) * scale
-                z = (point[2] - min_z) * scale
-                if axis == "x":
-                    x += offset
-                elif axis == "y":
-                    y += offset
-                else:
-                    z += offset
-                return (x, y, z)
-
-            for pair in base_pairs_bars:
-                p1 = transform_point(pair[0])
-                p2 = transform_point(pair[1])
-                structure_bars.append([p1, p2])
-                structure_points.extend([p1, p2])
-
-            for pair in base_pairs_strings:
-                p1 = transform_point(pair[0])
-                p2 = transform_point(pair[1])
-                structure_strings.append([p1, p2])
-                structure_points.extend([p1, p2])
-
-            offset += scale * axis_span
-
-        unique_points = list({tuple(p) for p in structure_points})
-        return unique_points, structure_bars, structure_strings
-
-    def _cell_spans(self):
-        if not self.points:
-            return 1.0, 1.0, 1.0
-        x_coords = [p[0] for p in self.points]
-        y_coords = [p[1] for p in self.points]
-        z_coords = [p[2] for p in self.points]
-        x_span = max(x_coords) - min(x_coords)
-        y_span = max(y_coords) - min(y_coords)
-        z_span = max(z_coords) - min(z_coords)
-        return x_span if x_span > 0 else 1.0, y_span if y_span > 0 else 1.0, z_span if z_span > 0 else 1.0
-
-    def _repeat_points(self, x_reps, y_reps, z_reps):
-        x_vector, y_vector, z_vector = self._pattern_vectors()
-        points = []
-        for x_rep in range(x_reps):
-            for y_rep in range(y_reps):
-                for z_rep in range(z_reps):
-                    offset = np.array(x_vector) * x_rep + np.array(y_vector) * y_rep + np.array(z_vector) * z_rep
-                    for point in self.points:
-                        points.append((
-                            point[0] + offset[0],
-                            point[1] + offset[1],
-                            point[2] + offset[2],
-                        ))
-        return points
-
-    def _repeat_pairs(self, pairs, x_reps, y_reps, z_reps):
-        x_vector, y_vector, z_vector = self._pattern_vectors()
-        repeated = []
-        for x_rep in range(x_reps):
-            for y_rep in range(y_reps):
-                for z_rep in range(z_reps):
-                    offset = np.array(x_vector) * x_rep + np.array(y_vector) * y_rep + np.array(z_vector) * z_rep
-                    for pair in pairs:
-                        repeated.append([
-                            (
-                                pair[0][0] + offset[0],
-                                pair[0][1] + offset[1],
-                                pair[0][2] + offset[2],
-                            ),
-                            (
-                                pair[1][0] + offset[0],
-                                pair[1][1] + offset[1],
-                                pair[1][2] + offset[2],
-                            ),
-                        ])
-        return repeated
-
-    def _connector_vector(self, connectors, axis_index, fallback_vector):
-        if not connectors:
-            return fallback_vector
-
-        pair = connectors[0]
-        vector = np.array([
-            pair[1][0] - pair[0][0],
-            pair[1][1] - pair[0][1],
-            pair[1][2] - pair[0][2],
-        ], dtype=float)
-
-        if np.linalg.norm(vector) < 1e-9:
-            return fallback_vector
-
-        if abs(vector[axis_index]) < 1e-9:
-            return fallback_vector
-
-        if vector[axis_index] < 0:
-            vector = -vector
-
-        return (float(vector[0]), float(vector[1]), float(vector[2]))
-
-    def _pattern_vectors(self):
-        x_span, y_span, z_span = self._cell_spans()
-        x_fallback = (x_span, 0.0, 0.0)
-        y_fallback = (0.0, y_span, 0.0)
-        z_fallback = (0.0, 0.0, z_span)
-
-        x_vector = self._connector_vector(self.x_connectors, 0, x_fallback)
-        y_vector = self._connector_vector(self.y_connectors, 1, y_fallback)
-        z_vector = self._connector_vector(self.z_connectors, 2, z_fallback)
-        return x_vector, y_vector, z_vector
-
-    def _connected_nodes(self, bars, strings):
-        connected = set()
-        for pair in bars:
-            connected.add(tuple(pair[0]))
-            connected.add(tuple(pair[1]))
-        for pair in strings:
-            connected.add(tuple(pair[0]))
-            connected.add(tuple(pair[1]))
-        for mns in self.multinode_strings:
-            for point in mns["points"]:
-                connected.add(tuple(point))
-        return list(connected)
-
     def _prune_pins_to_structure(self):
         valid_nodes = set(self.structure_points)
         self.x_pins = [point for point in self.x_pins if point in valid_nodes]
@@ -2646,7 +2283,11 @@ class StructureBuilderApp3D:
 
         self.structure_strings = _prune_multinode_segments(self.structure_strings, self.multinode_strings)
 
-        visible_nodes = self._connected_nodes(self.structure_bars, self.structure_strings)
+        visible_nodes = self.structure_exporter.connected_nodes(
+            self.structure_bars,
+            self.structure_strings,
+            self.multinode_strings,
+        )
         if visible_nodes:
             x_vals, y_vals, z_vals = zip(*visible_nodes)
             self.ax.scatter(x_vals, y_vals, z_vals, color="black", s=30, picker=5)
@@ -2759,15 +2400,36 @@ class StructureBuilderApp3D:
                     "y": self.y_pattern.get(),
                     "z": self.z_pattern.get(),
                 }[mode]
-                self.structure_points, self.structure_bars, self.structure_strings = self._build_self_similar_3d(mode, count)
+                (
+                    self.structure_points,
+                    self.structure_bars,
+                    self.structure_strings,
+                ) = self.structure_exporter.generate_self_similar_grid(
+                    self.bars,
+                    self.strings,
+                    mode,
+                    count,
+                )
             else:
                 x_reps = self.x_pattern.get()
                 y_reps = self.y_pattern.get()
                 z_reps = self.z_pattern.get()
-                self.structure_bars = self._repeat_pairs(self.bars, x_reps, y_reps, z_reps)
-                self.structure_strings = self._repeat_pairs(self.strings, x_reps, y_reps, z_reps)
-                self.structure_strings = _prune_multinode_segments(self.structure_strings, self.multinode_strings)
-                self.structure_points = self._connected_nodes(self.structure_bars, self.structure_strings)
+                (
+                    self.structure_points,
+                    self.structure_bars,
+                    self.structure_strings,
+                ) = self.structure_exporter.generate_grid(
+                    self.points,
+                    self.bars,
+                    self.strings,
+                    self.x_connectors,
+                    self.y_connectors,
+                    self.z_connectors,
+                    x_reps,
+                    y_reps,
+                    z_reps,
+                    self.multinode_strings,
+                )
 
             self._prune_pins_to_structure()
             self._draw_structure()
@@ -2835,55 +2497,23 @@ class StructureBuilderApp3D:
             messagebox.showerror("Input Error", "Please set a file name in Builder Details.")
             return
 
-        data = {
-            "nodes": {},
-            "connections": {
-                "bars": [],
-                "strings": [],
-            },
-            "pins": {},
-            "builders": {
-                "bars": {"stiffness": self.bar_stiffness.get(), "type": "bar"},
-                "strings": {
-                    "stiffness": self.string_stiffness.get(),
-                    "type": "string",
-                    "initial_length_ratio": self.string_initial_length_ratio.get(),
-                },
-            },
-        }
-
         names = [mns["name"] for mns in self.multinode_strings]
         selected_controls = [name for name in self.selected_controls if name in names]
         self.selected_controls = selected_controls
-        if selected_controls:
-            data["control"] = BlockList(selected_controls)
-
-        for point in self.structure_points:
-            node_name = point_name(point)
-            data["nodes"][node_name] = [round_coord(point[0]), round_coord(point[1]), round_coord(point[2])]
-            in_x = point in self.x_pins
-            in_y = point in self.y_pins
-            in_z = point in self.z_pins
-            if in_x or in_y or in_z:
-                data["pins"][node_name] = [in_x, in_y, in_z]
-
-        def append_pairs(target, pairs):
-            for pair in pairs:
-                p1 = point_name(pair[0])
-                p2 = point_name(pair[1])
-                data["connections"][target].append([p1, p2])
-
-        append_pairs("bars", self.structure_bars)
-        append_pairs("strings", self.structure_strings)
-
-        for entry in self.multinode_strings:
-            path = [point_name(point) for point in entry["points"]]
-            data["connections"]["strings"].append({entry['name']: path})
-
-        if not data["pins"]:
-            data.pop("pins")
-
-        write_yaml_file(f"{file_name}.yaml", data)
+        self.structure_exporter.generate_yaml(
+            self.structure_points,
+            self.structure_bars,
+            self.structure_strings,
+            self.multinode_strings,
+            self.x_pins,
+            self.y_pins,
+            self.z_pins,
+            self.string_stiffness.get(),
+            self.bar_stiffness.get(),
+            self.string_initial_length_ratio.get(),
+            selected_controls,
+            file_name,
+        )
         messagebox.showinfo("Success", f"Generated YAML file: {file_name}.yaml")
 
     def show_tooltip(self, text, x, y):

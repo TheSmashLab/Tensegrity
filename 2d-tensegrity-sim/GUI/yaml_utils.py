@@ -77,3 +77,20 @@ def point_name(point, decimals=6):
 
 def point_name_2d(point, decimals=6):
     return point_name(point[:2], decimals)
+
+
+def clean_control_names(controls):
+    if isinstance(controls, str):
+        control_values = [(controls or "").strip()]
+    elif controls is None:
+        control_values = []
+    else:
+        control_values = [str(name).strip() for name in controls]
+
+    cleaned_control_values = []
+    seen_controls = set()
+    for name in control_values:
+        if name and name not in seen_controls:
+            seen_controls.add(name)
+            cleaned_control_values.append(name)
+    return cleaned_control_values
