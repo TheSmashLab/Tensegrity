@@ -6,72 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import UnitCellGUI_backend as be
-import yaml
-
-class _InlineListDumper(yaml.SafeDumper):
-    """Render flat lists inline and nested lists in block style."""
-
-class _BlockList(list):
-    """Always render this list in block style."""
-
-def _represent_list(dumper, data):
-    is_flat_list = all(not isinstance(item, (list, dict, tuple)) for item in data)
-    return dumper.represent_sequence(
-        "tag:yaml.org,2002:seq",
-        data,
-        flow_style=is_flat_list,
-    )
-
-_InlineListDumper.add_representer(list, _represent_list)
-_InlineListDumper.add_representer(
-    _BlockList,
-    lambda dumper, data: dumper.represent_sequence(
-        "tag:yaml.org,2002:seq",
-        data,
-        flow_style=False,
-    ),
-)
-_InlineListDumper.add_representer(
-    np.float64,
-    lambda dumper, data: dumper.represent_float(float(data)),
-)
-_InlineListDumper.add_representer(
-    np.int64,
-    lambda dumper, data: dumper.represent_int(int(data)),
-)
-_InlineListDumper.add_representer(
-    np.int32,
-    lambda dumper, data: dumper.represent_int(int(data)),
-)
-_InlineListDumper.add_representer(
-    np.bool_,
-    lambda dumper, data: dumper.represent_bool(bool(data)),
-)
-
-def _write_yaml_file(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as file:
-        yaml.dump(
-            data,
-            file,
-            Dumper=_InlineListDumper,
-            sort_keys=False,
-            default_flow_style=False,
-            allow_unicode=True,
-            width=120,
-        )
-
-def _round_coord(value, decimals=6):
-    rounded = round(float(value), decimals)
-    if abs(rounded) < 10 ** (-decimals):
-        return 0.0
-    return rounded
-
-def _format_coord(value, decimals=6):
-    text = f"{_round_coord(value, decimals):.{decimals}f}".rstrip("0").rstrip(".")
-    return "0" if text == "-0" else text
-
-def _point_name(point, decimals=6):
-    return "(" + " ".join(_format_coord(v, decimals) for v in point) + ")"
+from yaml_utils import BlockList, point_name, round_coord, write_yaml_file
 
 
 def _configure_ui_defaults(root):
@@ -670,6 +605,7 @@ class StructureBuilderApp:
         
         self.unit = unit_cell
         self.structure = be.Structure()
+        self.supports_cylinder_surface = True
         
         # Create a frame for the structure builder
         self.main_frame = tk.Frame(root)
@@ -1431,7 +1367,8 @@ class BuilderDetailsWindow(tk.Toplevel):
         # Use parent app's cylinder_enabled if available (for synchronization)
         if parent_app and hasattr(parent_app, 'cylinder_enabled'):
             self.cylinder_enabled = parent_app.cylinder_enabled
-        self.cylinder_checkbox = tk.Checkbutton(frm, text="Cylinder", variable=self.cylinder_enabled, command=self._toggle_radius)
+        cylinder_label = "Cylinder" if self._parent_supports_cylinder() else "Cylinder (2D only)"
+        self.cylinder_checkbox = tk.Checkbutton(frm, text=cylinder_label, variable=self.cylinder_enabled, command=self._toggle_radius)
         self.cylinder_checkbox.grid(row=5, column=0, sticky="w", pady=4)
 
         # Radius Input
@@ -1480,16 +1417,21 @@ class BuilderDetailsWindow(tk.Toplevel):
 
     def _toggle_radius(self):
         """Enable or disable radius entry based on cylinder checkbox."""
-        if self.cylinder_enabled.get():
+        if self._parent_supports_cylinder() and self.cylinder_enabled.get():
             self.radius_entry.config(state="normal")
         else:
             self.radius_entry.config(state="disabled")
 
+    def _parent_supports_cylinder(self):
+        if not self.parent_app:
+            return True
+        return getattr(self.parent_app, "supports_cylinder_surface", True)
+
     def _update_cylinder_availability(self):
-        """Disable cylinder option when self-similar mode is enabled."""
-        enabled = True
+        """Disable cylinder option when unavailable for this mode or pattern."""
+        enabled = self._parent_supports_cylinder()
         if self.parent_app and hasattr(self.parent_app, "self_similar_pattern"):
-            enabled = self.parent_app.self_similar_pattern.get().lower() == "none"
+            enabled = enabled and self.parent_app.self_similar_pattern.get().lower() == "none"
 
         if not enabled:
             self.cylinder_enabled.set(False)
@@ -1504,7 +1446,7 @@ class BuilderDetailsWindow(tk.Toplevel):
             "string_initial_length_ratio": self.string_initial_length_ratio.get(),
             "inside_string_initial_length_ratio": self.inside_string_initial_length_ratio.get(),
             "file_name": self.file_name.get(),
-            "cylinder_enabled": self.cylinder_enabled.get(),
+            "cylinder_enabled": self._parent_supports_cylinder() and self.cylinder_enabled.get(),
             "radius": self.radius.get(),
             "control_names": self._selected_controls(),
         }
@@ -1519,7 +1461,7 @@ class BuilderDetailsWindow(tk.Toplevel):
             "string_initial_length_ratio": self.string_initial_length_ratio.get(),
             "inside_string_initial_length_ratio": self.inside_string_initial_length_ratio.get(),
             "file_name": self.file_name.get(),
-            "cylinder_enabled": self.cylinder_enabled.get(),
+            "cylinder_enabled": self._parent_supports_cylinder() and self.cylinder_enabled.get(),
             "radius": self.radius.get(),
             "control_names": self._selected_controls(),
         }
@@ -2348,6 +2290,7 @@ class StructureBuilderApp3D:
         self.y_connectors = y_connectors
         self.z_connectors = z_connectors
         self.points = points
+        self.supports_cylinder_surface = False
 
         self.x_pins = []
         self.y_pins = []
@@ -2913,11 +2856,11 @@ class StructureBuilderApp3D:
         selected_controls = [name for name in self.selected_controls if name in names]
         self.selected_controls = selected_controls
         if selected_controls:
-            data["control"] = _BlockList(selected_controls)
+            data["control"] = BlockList(selected_controls)
 
         for point in self.structure_points:
-            node_name = _point_name(point)
-            data["nodes"][node_name] = [_round_coord(point[0]), _round_coord(point[1]), _round_coord(point[2])]
+            node_name = point_name(point)
+            data["nodes"][node_name] = [round_coord(point[0]), round_coord(point[1]), round_coord(point[2])]
             in_x = point in self.x_pins
             in_y = point in self.y_pins
             in_z = point in self.z_pins
@@ -2926,21 +2869,21 @@ class StructureBuilderApp3D:
 
         def append_pairs(target, pairs):
             for pair in pairs:
-                p1 = _point_name(pair[0])
-                p2 = _point_name(pair[1])
+                p1 = point_name(pair[0])
+                p2 = point_name(pair[1])
                 data["connections"][target].append([p1, p2])
 
         append_pairs("bars", self.structure_bars)
         append_pairs("strings", self.structure_strings)
 
         for entry in self.multinode_strings:
-            path = [_point_name(point) for point in entry["points"]]
+            path = [point_name(point) for point in entry["points"]]
             data["connections"]["strings"].append({entry['name']: path})
 
         if not data["pins"]:
             data.pop("pins")
 
-        _write_yaml_file(f"{file_name}.yaml", data)
+        write_yaml_file(f"{file_name}.yaml", data)
         messagebox.showinfo("Success", f"Generated YAML file: {file_name}.yaml")
 
     def show_tooltip(self, text, x, y):

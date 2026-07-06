@@ -1,78 +1,5 @@
 import numpy as np
-import yaml
-
-
-class _InlineListDumper(yaml.SafeDumper):
-    """Render flat lists inline and nested lists in block style."""
-
-
-class _BlockList(list):
-    """Always render this list in block style."""
-
-
-def _represent_list(dumper, data):
-    is_flat_list = all(not isinstance(item, (list, dict, tuple)) for item in data)
-    return dumper.represent_sequence(
-        "tag:yaml.org,2002:seq",
-        data,
-        flow_style=is_flat_list,
-    )
-
-
-_InlineListDumper.add_representer(list, _represent_list)
-_InlineListDumper.add_representer(
-    _BlockList,
-    lambda dumper, data: dumper.represent_sequence(
-        "tag:yaml.org,2002:seq",
-        data,
-        flow_style=False,
-    ),
-)
-_InlineListDumper.add_representer(
-    np.float64,
-    lambda dumper, data: dumper.represent_float(float(data)),
-)
-_InlineListDumper.add_representer(
-    np.int64,
-    lambda dumper, data: dumper.represent_int(int(data)),
-)
-_InlineListDumper.add_representer(
-    np.int32,
-    lambda dumper, data: dumper.represent_int(int(data)),
-)
-_InlineListDumper.add_representer(
-    np.bool_,
-    lambda dumper, data: dumper.represent_bool(bool(data)),
-)
-
-
-def _write_yaml_file(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as file:
-        yaml.dump(
-            data,
-            file,
-            Dumper=_InlineListDumper,
-            sort_keys=False,
-            default_flow_style=False,
-            allow_unicode=True,
-            width=120,
-        )
-
-
-def _round_coord(value, decimals=6):
-    rounded = round(float(value), decimals)
-    if abs(rounded) < 10 ** (-decimals):
-        return 0.0
-    return rounded
-
-
-def _format_coord(value, decimals=6):
-    text = f"{_round_coord(value, decimals):.{decimals}f}".rstrip("0").rstrip(".")
-    return "0" if text == "-0" else text
-
-
-def _point_name_2d(point, decimals=6):
-    return f"({_format_coord(point[0], decimals)} {_format_coord(point[1], decimals)})"
+from yaml_utils import BlockList, point_name_2d, round_coord, write_yaml_file
 
 
 class UnitCell:
@@ -118,7 +45,7 @@ class UnitCell:
                     for pair in self.hw[:]:
                         if set(pair) == set(self.selected_points.copy()):
                             self.hw.remove(pair)
-                    for pair, line in self.vw[:]:
+                    for pair in self.vw[:]:
                         if set(pair) == set(self.selected_points.copy()):
                             self.vw.remove(pair)
                 case _:
@@ -135,7 +62,10 @@ class UnitCell:
 
     def submit_values(self):
         """Submit the selected lines."""
-        pass
+        print("Bars:", self.bars)
+        print("Strings:", self.strings)
+        print("Horizontal Wraps:", self.hw)
+        print("Vertical Wraps:", self.vw)
         
 class Structure:
     def __init__(self):
@@ -143,7 +73,6 @@ class Structure:
         self.x_pins = []
         self.y_pins = []
         self.selected_points2 = []
-        self.data = {"nodes": {}, "connections": {}, "pins": {}, "builders": {}, "control": {}, "surface": {}}
         self.outside_strings = []
         self.inside_strings = []
         self.linked_nodes = []
@@ -341,51 +270,56 @@ class Structure:
                 leftmost = nodes_at_y[0]
                 rightmost = nodes_at_y[-1]
                 # Store as list with node names (without stringifying)
-                self.linked_nodes.append([_point_name_2d(leftmost), _point_name_2d(rightmost)])
+                self.linked_nodes.append([point_name_2d(leftmost), point_name_2d(rightmost)])
 
     def generate_yaml(self, string_stiffness, bar_stiffness, string_initial_length_ratio, inside_string_initial_length_ratio, controls, file_name, cylinder_enabled=False, radius=0.0):
         """Generate YAML file with separated strings and inside_strings."""
-        
+        data = {
+            "nodes": {},
+            "connections": {"bars": [], "strings": [], "inside_strings": []},
+            "pins": {},
+            "builders": {},
+        }
+
         for i, point in enumerate(self.points):
-            node_name = _point_name_2d(point)
-            self.data["nodes"].update({
-                node_name: [_round_coord(point[0]), _round_coord(point[1]), 0.0]
+            node_name = point_name_2d(point)
+            data["nodes"].update({
+                node_name: [round_coord(point[0]), round_coord(point[1]), 0.0]
             })
             if point in self.x_pins and point in self.y_pins:
-                self.data["pins"].update({node_name: [True, True, False]})
+                data["pins"].update({node_name: [True, True, False]})
             elif point in self.x_pins:
-                self.data["pins"].update({node_name: [True, False, False]})
+                data["pins"].update({node_name: [True, False, False]})
             elif point in self.y_pins:
-                self.data["pins"].update({node_name: [False, True, False]})
-        self.data["connections"] = {"bars": [], "strings": [], "inside_strings": []}
+                data["pins"].update({node_name: [False, True, False]})
         
         # Add outside strings (both endpoints on edges)
         for string in self.outside_strings:
             path = []
             for i in range(len(string)):
-                path.append(_point_name_2d(string[i]))
-            self.data["connections"]["strings"].append(path)
+                path.append(point_name_2d(string[i]))
+            data["connections"]["strings"].append(path)
 
         # Add inside strings (at least one endpoint not on edges)
         for string in self.inside_strings:
             path = []
             for i in range(len(string)):
-                path.append(_point_name_2d(string[i]))
-            self.data["connections"]["inside_strings"].append(path)
+                path.append(point_name_2d(string[i]))
+            data["connections"]["inside_strings"].append(path)
 
         # Add multinode strings to strings
         for entry in self.multinode_strings:
             string = entry["points"]
             path = []
             for i in range(len(string)):
-                path.append(_point_name_2d(string[i]))
-            self.data["connections"]["strings"].append({entry["name"]: path})
+                path.append(point_name_2d(string[i]))
+            data["connections"]["strings"].append({entry["name"]: path})
 
         # Add bars
         for bar in self.unique_bars:
-            point1 = _point_name_2d(bar[0])
-            point2 = _point_name_2d(bar[1])
-            self.data["connections"]["bars"].append([point1, point2])
+            point1 = point_name_2d(bar[0])
+            point2 = point_name_2d(bar[1])
+            data["connections"]["bars"].append([point1, point2])
 
         if isinstance(controls, str):
             control_values = [(controls or "").strip()]
@@ -401,30 +335,25 @@ class Structure:
                 seen_controls.add(name)
                 cleaned_control_values.append(name)
 
-        self.data.pop("controls", None)
         if cleaned_control_values:
-            self.data["control"] = _BlockList(cleaned_control_values)
-        else:
-            self.data.pop("control", None)
+            data["control"] = BlockList(cleaned_control_values)
 
-        self.data["builders"] = {
+        data["builders"] = {
             "bars": {"stiffness": bar_stiffness, "type": "bar"},
             "strings": {"stiffness": string_stiffness, "type": "string", "initial_length_ratio": string_initial_length_ratio},
             "inside_strings": {"stiffness": string_stiffness, "type": "string", "initial_length_ratio": inside_string_initial_length_ratio},
         }
 
         if cylinder_enabled and radius > 0:
-            self.data["surface"] = {
+            data["surface"] = {
                 "cylinder": {"radius": radius},
                 "linked_nodes": self.linked_nodes,
             }
-        else:
-            self.data.pop("surface", None)
 
-        if not self.data.get("pins"):
-            self.data.pop("pins", None)
+        if not data.get("pins"):
+            data.pop("pins", None)
 
-        _write_yaml_file(f"{file_name}.yaml", self.data)
+        write_yaml_file(f"{file_name}.yaml", data)
         return
     
 if __name__ == "__main__":

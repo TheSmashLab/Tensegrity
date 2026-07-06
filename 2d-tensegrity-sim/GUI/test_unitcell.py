@@ -1,4 +1,4 @@
-import pytest
+import yaml
 from io import StringIO
 from contextlib import redirect_stdout
 
@@ -89,7 +89,18 @@ def test_delete_lines_bar():
     # Also, ensure other line lists remain unaffected (empty).
     assert uc.strings == []
     assert uc.hw == []
-    # Note: vertical wrap deletion is not tested due to its differing iteration.
+
+
+def test_delete_lines_vertical_wrap():
+    uc = UnitCell()
+    uc.create_lines((1, 0), "vertical wrap")
+    uc.create_lines((1, 1), "vertical wrap")
+    assert uc.vw == [[(1, 0), (1, 1)]]
+
+    uc.create_lines((1, 1), "delete")
+    uc.create_lines((1, 0), "delete")
+
+    assert uc.vw == []
 
 
 def test_clear_lines():
@@ -128,3 +139,25 @@ def test_submit_values(capsys):
     assert "Vertical Wraps:" in output
     assert "[(0, 0), (1, 1)]" in output
     assert "[(2, 2), (3, 3)]" in output
+
+
+def test_generate_yaml_does_not_reuse_previous_pin_state(tmp_path):
+    structure = Structure()
+    structure.points = [(0, 0), (1, 0)]
+    structure.unique_bars = [[(0, 0), (1, 0)]]
+    structure.outside_strings = []
+    structure.inside_strings = []
+    structure.unique_strings = []
+
+    first_file = tmp_path / "first"
+    structure.x_pins = [(0, 0)]
+    structure.generate_yaml(100, 1000, 0.95, 0.95, [], str(first_file))
+    first_data = yaml.safe_load((tmp_path / "first.yaml").read_text())
+    assert "pins" in first_data
+
+    second_file = tmp_path / "second"
+    structure.x_pins = []
+    structure.y_pins = []
+    structure.generate_yaml(100, 1000, 0.95, 0.95, [], str(second_file))
+    second_data = yaml.safe_load((tmp_path / "second.yaml").read_text())
+    assert "pins" not in second_data
