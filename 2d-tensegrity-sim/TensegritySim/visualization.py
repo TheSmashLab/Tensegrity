@@ -446,7 +446,8 @@ class Visualization:
                 if self.tensegrity.surface.shape["surface_type"] == "cylinder":
                     self.r = self.tensegrity.surface.shape["properties"]["radius"]
                     return np.array([self.r*np.cos(x/self.r), self.r*np.sin(x/self.r), y])
-            return np.array([x, y, z]) # Default to no transformation
+            x_values, y_values, z_values = np.broadcast_arrays(x, y, z)
+            return np.array([x_values, y_values, z_values], dtype=float) # Default to no transformation
 
         self._hover_transform = transform
 
@@ -510,7 +511,8 @@ class Visualization:
                     t_values = np.linspace(0, 1, 100)
                     x_values = connection.nodes[i].position[0] + t_values*(connection.nodes[i+1].position[0] - connection.nodes[i].position[0])
                     y_values = connection.nodes[i].position[1] + t_values*(connection.nodes[i+1].position[1] - connection.nodes[i].position[1])
-                    positions = transform(x_values, y_values)
+                    z_values = connection.nodes[i].position[2] + t_values*(connection.nodes[i+1].position[2] - connection.nodes[i].position[2])
+                    positions = transform(x_values, y_values, z_values)
                     self.ax.plot3D(positions[0], positions[1], positions[2], linestyle=style, color=color)
 
         # --- label ---

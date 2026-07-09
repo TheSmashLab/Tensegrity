@@ -1,5 +1,6 @@
 import numpy as np
-from yaml_utils import BlockList, clean_control_names, point_name, point_name_2d, round_coord, write_yaml_file
+from yaml_utils import point_name_2d
+from yaml_exporter import build_structure_yaml_2d, build_structure_yaml_3d, write_structure_yaml
 
 
 def prune_multinode_segments(segment_pairs, multinode_strings):
@@ -18,6 +19,95 @@ def prune_multinode_segments(segment_pairs, multinode_strings):
         if segment_key not in excluded_segments:
             filtered_segments.append(pair)
     return filtered_segments
+
+
+def nearest_point_2d(points, x, y):
+    """Return the closest 2D point and its distance from a click location."""
+    if not points or x is None or y is None:
+        return None, None
+    nearest = min(points, key=lambda p: np.linalg.norm([p[0] - x, p[1] - y]))
+    distance = float(np.linalg.norm([nearest[0] - x, nearest[1] - y]))
+    return nearest, distance
+
+
+def span_2d(points):
+    """Return x/y spans for a set of 2D points."""
+    if not points:
+        return 1.0, 1.0
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return max(xs) - min(xs), max(ys) - min(ys)
+
+
+def selection_radius_2d(points, ratio=0.02, minimum=0.25):
+    span_x, span_y = span_2d(points)
+    return max(ratio * max(span_x, span_y, 1.0), minimum)
+
+
+def pin_half_length_2d(points, ratio=0.04, minimum=0.2):
+    span_x, span_y = span_2d(points)
+    return max(ratio * max(span_x, span_y, 1.0), minimum)
+
+
+def apply_pin_action_3d(x_pins, y_pins, z_pins, point, action):
+    """Apply a 3D pin action to pin lists. Returns True when state changed."""
+    changed = False
+    axis_lists = {
+        "x_pin": x_pins,
+        "y_pin": y_pins,
+        "z_pin": z_pins,
+    }
+    if action in axis_lists:
+        pins = axis_lists[action]
+        if point not in pins:
+            pins.append(point)
+            changed = True
+    elif action == "unpin":
+        for pins in axis_lists.values():
+            if point in pins:
+                pins.remove(point)
+                changed = True
+    return changed
+
+
+def prune_pin_lists_to_points(valid_points, *pin_lists):
+    """Return pin lists containing only points still present in the structure."""
+    valid_nodes = set(valid_points)
+    return [[point for point in pins if point in valid_nodes] for pins in pin_lists]
+
+
+def connected_points_from_pairs(*pair_collections):
+    """Return points that are endpoints of at least one drawn pair."""
+    connected = set()
+    for pairs in pair_collections:
+        for pair in pairs or []:
+            if len(pair) < 2:
+                continue
+            connected.add(tuple(pair[0]))
+            connected.add(tuple(pair[1]))
+    return connected
+
+
+def visible_unit_points(points, hide_unconnected, *pair_collections):
+    """Filter unit-cell points to those connected by drawn elements when requested."""
+    if not hide_unconnected:
+        return list(points)
+    connected = connected_points_from_pairs(*pair_collections)
+    return [point for point in points if tuple(point) in connected]
+
+
+def horizontal_stub_endpoint(point, min_x, max_x, stub_length):
+    """Return a short horizontal segment endpoint pointing away from graph center."""
+    tol = 1e-9
+    x, y = point
+    if abs(x - min_x) < tol:
+        x2 = x - stub_length
+    elif abs(x - max_x) < tol:
+        x2 = x + stub_length
+    else:
+        mid = (min_x + max_x) / 2.0
+        x2 = x - stub_length if x <= mid else x + stub_length
+    return (x2, y)
 
 
 class UnitCell:
@@ -72,6 +162,7 @@ class UnitCell:
     
     def clear_lines(self):
         """Clear all drawn lines."""
+        self.selected_points.clear()
         self.bars.clear()
         self.strings.clear()
         self.hw.clear()
@@ -475,76 +566,36 @@ class Structure:
                 # Store as list with node names (without stringifying)
                 self.linked_nodes.append([point_name_2d(leftmost), point_name_2d(rightmost)])
 
+    def apply_pin_action(self, point, action):
+        return apply_pin_action_3d(self.x_pins, self.y_pins, [], point, action)
+
+    def prune_pins_to_points(self, valid_points):
+        self.x_pins, self.y_pins = prune_pin_lists_to_points(valid_points, self.x_pins, self.y_pins)
+
+    def is_linked_pair(self, point_a, point_b):
+        pair = {point_name_2d(point_a), point_name_2d(point_b)}
+        return any(set(linked) == pair for linked in self.linked_nodes)
+
     def generate_yaml(self, string_stiffness, bar_stiffness, string_initial_length_ratio, inside_string_initial_length_ratio, controls, file_name, cylinder_enabled=False, radius=0.0):
         """Generate YAML file with separated strings and inside_strings."""
-        data = {
-            "nodes": {},
-            "connections": {"bars": [], "strings": [], "inside_strings": []},
-            "pins": {},
-            "builders": {},
-        }
-
-        for i, point in enumerate(self.points):
-            node_name = point_name_2d(point)
-            data["nodes"].update({
-                node_name: [round_coord(point[0]), round_coord(point[1]), 0.0]
-            })
-            if point in self.x_pins and point in self.y_pins:
-                data["pins"].update({node_name: [True, True, False]})
-            elif point in self.x_pins:
-                data["pins"].update({node_name: [True, False, False]})
-            elif point in self.y_pins:
-                data["pins"].update({node_name: [False, True, False]})
-        
-        # Add outside strings (both endpoints on edges)
-        for string in self.outside_strings:
-            path = []
-            for i in range(len(string)):
-                path.append(point_name_2d(string[i]))
-            data["connections"]["strings"].append(path)
-
-        # Add inside strings (at least one endpoint not on edges)
-        for string in self.inside_strings:
-            path = []
-            for i in range(len(string)):
-                path.append(point_name_2d(string[i]))
-            data["connections"]["inside_strings"].append(path)
-
-        # Add multinode strings to strings
-        for entry in self.multinode_strings:
-            string = entry["points"]
-            path = []
-            for i in range(len(string)):
-                path.append(point_name_2d(string[i]))
-            data["connections"]["strings"].append({entry["name"]: path})
-
-        # Add bars
-        for bar in self.unique_bars:
-            point1 = point_name_2d(bar[0])
-            point2 = point_name_2d(bar[1])
-            data["connections"]["bars"].append([point1, point2])
-
-        cleaned_control_values = clean_control_names(controls)
-        if cleaned_control_values:
-            data["control"] = BlockList(cleaned_control_values)
-
-        data["builders"] = {
-            "bars": {"stiffness": bar_stiffness, "type": "bar"},
-            "strings": {"stiffness": string_stiffness, "type": "string", "initial_length_ratio": string_initial_length_ratio},
-            "inside_strings": {"stiffness": string_stiffness, "type": "string", "initial_length_ratio": inside_string_initial_length_ratio},
-        }
-
-        if cylinder_enabled and radius > 0:
-            data["surface"] = {
-                "cylinder": {"radius": radius},
-                "linked_nodes": self.linked_nodes,
-            }
-
-        if not data.get("pins"):
-            data.pop("pins", None)
-
-        write_yaml_file(f"{file_name}.yaml", data)
-        return
+        data = build_structure_yaml_2d(
+            self.points,
+            self.unique_bars,
+            self.outside_strings,
+            self.inside_strings,
+            self.multinode_strings,
+            self.x_pins,
+            self.y_pins,
+            self.linked_nodes,
+            string_stiffness,
+            bar_stiffness,
+            string_initial_length_ratio,
+            inside_string_initial_length_ratio,
+            controls,
+            cylinder_enabled,
+            radius,
+        )
+        write_structure_yaml(file_name, data)
 
 
 class Structure3D:
@@ -771,52 +822,20 @@ class Structure3D:
         controls,
         file_name,
     ):
-        data = {
-            "nodes": {},
-            "connections": {
-                "bars": [],
-                "strings": [],
-            },
-            "pins": {},
-            "builders": {
-                "bars": {"stiffness": bar_stiffness, "type": "bar"},
-                "strings": {
-                    "stiffness": string_stiffness,
-                    "type": "string",
-                    "initial_length_ratio": string_initial_length_ratio,
-                },
-            },
-        }
-
-        selected_controls = clean_control_names(controls)
-        if selected_controls:
-            data["control"] = BlockList(selected_controls)
-
-        for point in structure_points:
-            node_name = point_name(point)
-            data["nodes"][node_name] = [round_coord(point[0]), round_coord(point[1]), round_coord(point[2])]
-            in_x = point in x_pins
-            in_y = point in y_pins
-            in_z = point in z_pins
-            if in_x or in_y or in_z:
-                data["pins"][node_name] = [in_x, in_y, in_z]
-
-        self._append_pairs(data["connections"]["bars"], structure_bars)
-        self._append_pairs(data["connections"]["strings"], structure_strings)
-
-        for entry in multinode_strings:
-            path = [point_name(point) for point in entry["points"]]
-            data["connections"]["strings"].append({entry["name"]: path})
-
-        if not data["pins"]:
-            data.pop("pins")
-
-        write_yaml_file(f"{file_name}.yaml", data)
-
-    @staticmethod
-    def _append_pairs(target, pairs):
-        for pair in pairs:
-            target.append([point_name(pair[0]), point_name(pair[1])])
+        data = build_structure_yaml_3d(
+            structure_points,
+            structure_bars,
+            structure_strings,
+            multinode_strings,
+            x_pins,
+            y_pins,
+            z_pins,
+            string_stiffness,
+            bar_stiffness,
+            string_initial_length_ratio,
+            controls,
+        )
+        write_structure_yaml(file_name, data)
     
 if __name__ == "__main__":
     pass

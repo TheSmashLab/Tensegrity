@@ -86,3 +86,43 @@ def test_spring_connection_energy(OnexOne_tensegrity):
     energy3 = solver._spring_connection_energy(connection3, N)
     expected_energy3 = 0 # string connection cannot be compressed
     assert energy3 == expected_energy3, f"Expected energy {expected_energy3}, but got {energy3}"
+
+
+def test_2d_solve_preserves_z_coordinates():
+    node1 = Node(name="A", position=np.array([0.0, 0.0, 7.0]))
+    node2 = Node(name="B", position=np.array([2.0, 0.0, 9.0]))
+    connection = Connection(
+        nodes=[node1, node2],
+        connection_type=Connection.ConnectionType.BAR,
+        stiffness=1.0,
+        initial_length=1.0,
+    )
+    tensegrity = Tensegrity(
+        [node1, node2],
+        [connection],
+        pins={"A": [True, True, False], "B": [False, True, False]},
+    )
+
+    TensegritySolver(tensegrity, dim=2).solve()
+
+    assert len(node1.position) == 3
+    assert len(node2.position) == 3
+    assert node1.position[2] == 7.0
+    assert node2.position[2] == 9.0
+
+
+def test_get_nodes_from_input_reconstructs_partial_pins_in_coordinate_order():
+    node1 = Node(name="A", position=np.array([1.0, 2.0, 0.0]))
+    node2 = Node(name="B", position=np.array([3.0, 4.0, 0.0]))
+    node3 = Node(name="C", position=np.array([5.0, 6.0, 0.0]))
+    tensegrity = Tensegrity(
+        [node1, node2, node3],
+        [],
+        pins={"B": [True, False, False], "A": [False, True, False]},
+    )
+    solver = TensegritySolver(tensegrity, dim=2)
+
+    x0 = solver._create_initial_guess()
+    nodes = solver._get_nodes_from_input(x0)
+
+    np.testing.assert_array_equal(nodes, np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))

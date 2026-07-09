@@ -3,7 +3,21 @@ from io import StringIO
 from contextlib import redirect_stdout
 
 
-from UnitCellGUI_backend import Structure, Structure3D, UnitCell, UnitCell3D
+from UnitCellGUI_backend import (
+    Structure,
+    Structure3D,
+    UnitCell,
+    UnitCell3D,
+    apply_pin_action_3d,
+    connected_points_from_pairs,
+    horizontal_stub_endpoint,
+    nearest_point_2d,
+    pin_half_length_2d,
+    prune_pin_lists_to_points,
+    selection_radius_2d,
+    visible_unit_points,
+)
+from yaml_exporter import build_structure_yaml_2d, build_structure_yaml_3d
 
 
 def test_generate_grid():
@@ -105,6 +119,7 @@ def test_delete_lines_vertical_wrap():
 
 def test_clear_lines():
     uc = UnitCell()
+    uc.selected_points.append((9, 9))
     # Manually add lines to each list.
     uc.bars.append([(0, 0), (1, 1)])
     uc.strings.append([(2, 2), (3, 3)])
@@ -117,6 +132,7 @@ def test_clear_lines():
     assert uc.strings == []
     assert uc.hw == []
     assert uc.vw == []
+    assert uc.selected_points == []
 
 
 def test_submit_values(capsys):
@@ -230,6 +246,101 @@ def test_generate_yaml_does_not_reuse_previous_pin_state(tmp_path):
     structure.generate_yaml(100, 1000, 0.95, 0.95, [], str(second_file))
     second_data = yaml.safe_load((tmp_path / "second.yaml").read_text())
     assert "pins" not in second_data
+
+
+def test_2d_selection_and_pin_helpers_scale_with_structure_size():
+    points = [(0, 0), (10, 0), (10, 5)]
+
+    nearest, distance = nearest_point_2d(points, 9.8, 0.1)
+
+    assert nearest == (10, 0)
+    assert round(distance, 6) == 0.223607
+    assert selection_radius_2d(points) == 0.25
+    assert pin_half_length_2d(points) == 0.4
+
+
+def test_pin_state_helpers_add_remove_and_prune():
+    x_pins = []
+    y_pins = [(1, 0, 0)]
+    z_pins = []
+
+    assert apply_pin_action_3d(x_pins, y_pins, z_pins, (0, 0, 0), "x_pin")
+    assert not apply_pin_action_3d(x_pins, y_pins, z_pins, (0, 0, 0), "x_pin")
+    assert apply_pin_action_3d(x_pins, y_pins, z_pins, (1, 0, 0), "unpin")
+
+    assert x_pins == [(0, 0, 0)]
+    assert y_pins == []
+    assert z_pins == []
+
+    pruned_x, pruned_y = prune_pin_lists_to_points([(2, 0)], [(0, 0), (2, 0)], [(3, 0)])
+    assert pruned_x == [(2, 0)]
+    assert pruned_y == []
+
+
+def test_visible_unit_points_filters_unconnected_nodes_when_requested():
+    points = [(0, 0), (1, 0), (2, 0), (3, 0)]
+    bars = [[(0, 0), (1, 0)]]
+    strings = [[(2, 0), (3, 0)]]
+
+    assert connected_points_from_pairs(bars, strings) == {(0, 0), (1, 0), (2, 0), (3, 0)}
+    assert visible_unit_points(points, False, bars) == points
+    assert visible_unit_points(points, True, bars) == [(0, 0), (1, 0)]
+    assert visible_unit_points(points, True, bars, strings) == points
+
+
+def test_horizontal_stub_endpoint_points_away_from_graph_center():
+    assert horizontal_stub_endpoint((0, 1), 0, 10, 0.5) == (-0.5, 1)
+    assert horizontal_stub_endpoint((10, 1), 0, 10, 0.5) == (10.5, 1)
+    assert horizontal_stub_endpoint((4, 1), 0, 10, 0.5) == (3.5, 1)
+    assert horizontal_stub_endpoint((6, 1), 0, 10, 0.5) == (6.5, 1)
+
+
+def test_build_structure_yaml_2d_centralizes_formatting_and_optional_sections():
+    data = build_structure_yaml_2d(
+        points=[(0, 0), (1.23456789, -0.0)],
+        bars=[[(0, 0), (1.23456789, -0.0)]],
+        outside_strings=[[(0, 0), (1.23456789, -0.0)]],
+        inside_strings=[],
+        multinode_strings=[{"name": "String1", "points": [(0, 0), (1.23456789, -0.0)]}],
+        x_pins=[(0, 0)],
+        y_pins=[(0, 0)],
+        linked_nodes=[["(0 0)", "(1.234568 0)"]],
+        string_stiffness=100,
+        bar_stiffness=1000,
+        string_initial_length_ratio=0.95,
+        inside_string_initial_length_ratio=0.9,
+        controls=["String1", "", "String1"],
+        cylinder_enabled=True,
+        radius=2.5,
+    )
+
+    assert data["nodes"]["(1.234568 0)"] == [1.234568, 0.0, 0.0]
+    assert data["pins"]["(0 0)"] == [True, True, False]
+    assert data["connections"]["bars"] == [["(0 0)", "(1.234568 0)"]]
+    assert {"String1": ["(0 0)", "(1.234568 0)"]} in data["connections"]["strings"]
+    assert data["control"] == ["String1"]
+    assert data["surface"]["cylinder"]["radius"] == 2.5
+
+
+def test_build_structure_yaml_3d_omits_empty_optional_sections():
+    data = build_structure_yaml_3d(
+        structure_points=[(0, 0, 0), (1, 0, 0)],
+        structure_bars=[],
+        structure_strings=[[(0, 0, 0), (1, 0, 0)]],
+        multinode_strings=[],
+        x_pins=[],
+        y_pins=[],
+        z_pins=[],
+        string_stiffness=100,
+        bar_stiffness=1000,
+        string_initial_length_ratio=0.95,
+        controls=["", ""],
+    )
+
+    assert data["nodes"]["(0 0 0)"] == [0.0, 0.0, 0.0]
+    assert data["connections"]["strings"] == [["(0 0 0)", "(1 0 0)"]]
+    assert "pins" not in data
+    assert "control" not in data
 
 
 def test_generate_self_similar_grid_2d_scales_along_axis():

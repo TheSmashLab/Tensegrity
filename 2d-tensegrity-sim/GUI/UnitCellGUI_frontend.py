@@ -1,11 +1,23 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import tkinter.font as tkfont
+import os
+import sys
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import UnitCellGUI_backend as be
+
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.append(_PROJECT_ROOT)
+
+from TensegritySim import TensegrityError
+
+
+def _show_gui_error(title, error):
+    messagebox.showerror(title, str(error))
 
 
 def _configure_ui_defaults(root):
@@ -87,7 +99,7 @@ _WORKFLOW_OVERVIEW_TEXT = """
 2. In the unit cell window, draw the unit cell that will be patterned to make the tensegrity structure.
 3. Use Submit to send the finished unit cell to the structure window.
 4. In the structure window, place pins and draw cluster strings.
-5. Open Builder Details to set stiffness, file name, active strings, and surface options.
+5. Open Builder Details to set stiffness, file name, active strings, and available surface options.
 6. Generate YAML when the structure is ready to export.
 """
 
@@ -97,6 +109,8 @@ _UNIT_CELL_2D_INSTRUCTIONS = """
 - Use the Line Style menu to switch between bars, strings, horizontal wraps, vertical wraps, and delete.
 - Hold Ctrl and use the mouse wheel to cycle line styles quickly.
 - Click the canvas to pick grid points and draw or remove connections.
+- Show Node Positions only toggles coordinate labels; existing lines stay visible.
+- Hide unconnected nodes hides and disables clicking on nodes that are not part of any drawn unit-cell element.
 - Clear Lines removes every connection in the current unit cell.
 - Submit sends the finished unit cell to the structure window.
 """
@@ -107,7 +121,8 @@ _STRUCTURE_2D_INSTRUCTIONS = """
 - Use the Structure Element menu to switch between pins, unpin, and clustered strings.
 - Click the canvas to place the currently selected element.
 - Press Enter to finish a clustered string.
-- Builder Details controls stiffness, file name, active strings, and surface options.
+- Horizontal Wrapping draws wrapped clustered-string links as short outward stubs instead of direct cross-structure lines.
+- Builder Details controls stiffness, file name, active strings, and 2D cylinder surface options.
 - Generate YAML writes the current structure to a YAML file.
 """
 
@@ -117,6 +132,8 @@ _UNIT_CELL_3D_INSTRUCTIONS = """
 - Use the Line Style menu to switch between bars, strings, X connectors, Y connectors, Z connectors, and delete.
 - Hold Ctrl and use the mouse wheel to cycle line styles quickly.
 - Click the canvas to pick grid points and draw or remove connections.
+- Show Node Positions only toggles coordinate labels; existing lines stay visible.
+- Hide unconnected nodes hides and disables picking on nodes that are not part of any drawn unit-cell element.
 - Clear Lines removes every connection in the current unit cell.
 - Submit sends the finished unit cell to the structure window.
 """
@@ -127,16 +144,13 @@ _STRUCTURE_3D_INSTRUCTIONS = """
 - Use the Structure Element menu to switch between pins, unpin, and clustered strings.
 - Click the canvas to place the currently selected element.
 - Press Enter to finish a clustered string.
-- Builder Details controls stiffness, file name, active strings, and surface options.
+- Builder Details controls stiffness, file name, and active strings. 3D cylinder surface controls are intentionally unavailable.
 - Generate YAML writes the current structure to a YAML file.
 """
 
 
 def _show_instructions_window(parent, title, content):
     return InstructionsWindow(parent, title, content)
-
-def _prune_multinode_segments(segment_pairs, multinode_strings):
-    return be.prune_multinode_segments(segment_pairs, multinode_strings)
 
 def close_root_if_last_window(root):
     """Close the Tk root if no visible root and no child toplevel windows remain."""
@@ -340,6 +354,15 @@ class UnitCellBuilderApp:
         )
         self.node_positions_toggle.pack(side=tk.LEFT, padx=5)
 
+        self.hide_unconnected_nodes = tk.BooleanVar(value=False)
+        self.hide_unconnected_toggle = tk.Checkbutton(
+            line_control_frame,
+            text="Hide unconnected nodes",
+            variable=self.hide_unconnected_nodes,
+            command=self.update_grid_display
+        )
+        self.hide_unconnected_toggle.pack(side=tk.LEFT, padx=5)
+
         # Matplotlib Figure
         self.fig, self.ax = plt.subplots(figsize=(5, 5))
         self.ax.set_xlabel('X')
@@ -368,6 +391,7 @@ class UnitCellBuilderApp:
         self.selected_points = []
         self.bars = []
         self.strings = []
+        self.visible_points = []
     
         # Generate initial grid
         self.generate_grid()
@@ -413,33 +437,20 @@ class UnitCellBuilderApp:
     def open_instructions(self):
         _show_instructions_window(self.root, "Unit Cell Instructions", _UNIT_CELL_2D_INSTRUCTIONS)
 
-    def generate_grid(self):
+    def generate_grid(self, reset_lines=True):
         """Generate a uniform grid of points based on user input."""
-        self.ax.clear()
-        self.ax.set_xlabel('X')
-        self.ax.set_ylabel('Y')
-        self.ax.set_aspect('equal', adjustable='box')
-
         # Create grid points
         self.points = self.unit.generate_grid(self.x_count, self.y_count, self.x_spacing, self.y_spacing)
         for point in self.custom_points:
             if point not in self.points:
                 self.points.append(point)
 
-        # Scatter plot of points
-        x_vals, y_vals = zip(*self.points)
-        self.ax.scatter(x_vals, y_vals, color="black", s=50)
-
-        # Label points only if toggle is enabled
-        if self.show_node_positions.get():
-            for i, (x, y) in enumerate(self.points):
-                self.ax.text(x, y, f"[{x}, {y}]", fontsize=10, verticalalignment="bottom", horizontalalignment="right")
-
-        self.selected_points.clear()
-        self.bars.clear()
-        self.strings.clear()
-        set_equal_axes_limits(self.ax, self.points)
-        self.canvas.draw()
+        if reset_lines:
+            self.unit.clear_lines()
+            self.selected_points.clear()
+            self.bars.clear()
+            self.strings.clear()
+        self._redraw_unit_cell_graph()
 
     def add_custom_node(self, point):
         """Add a custom node to the current grid and redraw."""
@@ -451,23 +462,60 @@ class UnitCellBuilderApp:
         return True
 
     def update_grid_display(self):
-        """Update the grid display when node positions toggle changes."""
+        """Redraw unit-cell display after visibility-only toggles change."""
+        self._redraw_unit_cell_graph()
+
+    def _visible_unit_points(self):
+        return be.visible_unit_points(
+            self.points,
+            self.hide_unconnected_nodes.get(),
+            self.unit.bars,
+            self.unit.strings,
+            self.unit.hw,
+            self.unit.vw,
+        )
+
+    def _draw_unit_cell_points(self):
         if not self.points:
             return
-        
-        self.ax.clear()
-        self.ax.set_xlabel('X')
-        self.ax.set_ylabel('Y')
-        self.ax.set_aspect('equal', adjustable='box')
-        
+        self.visible_points = self._visible_unit_points()
+        if not self.visible_points:
+            return
+
         # Scatter plot of points
-        x_vals, y_vals = zip(*self.points)
+        x_vals, y_vals = zip(*self.visible_points)
         self.ax.scatter(x_vals, y_vals, color="black", s=50)
 
         # Label points only if toggle is enabled
         if self.show_node_positions.get():
-            for i, (x, y) in enumerate(self.points):
+            for i, (x, y) in enumerate(self.visible_points):
                 self.ax.text(x, y, f"[{x}, {y}]", fontsize=10, verticalalignment="bottom", horizontalalignment="right")
+
+    def _redraw_unit_cell_graph(self):
+        """Redraw points, labels, and all existing unit-cell elements."""
+        self.ax.clear()
+        self.ax.set_xlabel('X')
+        self.ax.set_ylabel('Y')
+        self.ax.set_aspect('equal', adjustable='box')
+
+        self._draw_unit_cell_points()
+
+        for bar in self.unit.bars:
+            x_vals, y_vals = zip(*bar)
+            self.ax.plot(x_vals, y_vals, linestyle='-', color="blue")
+        for string in self.unit.strings:
+            x_vals, y_vals = zip(*string)
+            self.ax.plot(x_vals, y_vals, linestyle='--', color="red")
+        for hwrap in self.unit.hw:
+            x_vals, y_vals = zip(*hwrap)
+            stub = (self.x_spacing if hasattr(self, 'x_spacing') else self.x_distance.get()) * 0.1
+            self.ax.plot([max(x_vals), max(x_vals) + stub], [y_vals[x_vals.index(max(x_vals))], y_vals[x_vals.index(max(x_vals))]], linestyle='--', color="green")
+            self.ax.plot([min(x_vals), min(x_vals) - stub], [y_vals[x_vals.index(min(x_vals))], y_vals[x_vals.index(min(x_vals))]], linestyle='--', color="green")
+        for vwrap in self.unit.vw:
+            x_vals, y_vals = zip(*vwrap)
+            stub = (self.y_spacing if hasattr(self, 'y_spacing') else self.y_distance.get()) * 0.1
+            self.ax.plot([x_vals[y_vals.index(max(y_vals))], x_vals[y_vals.index(max(y_vals))]], [max(y_vals), max(y_vals) + stub], linestyle='--', color="green")
+            self.ax.plot([x_vals[y_vals.index(min(y_vals))], x_vals[y_vals.index(min(y_vals))]], [min(y_vals), min(y_vals) - stub], linestyle='--', color="green")
 
         set_equal_axes_limits(self.ax, self.points)
         self.canvas.draw()
@@ -484,35 +532,20 @@ class UnitCellBuilderApp:
         """Handle click events for selecting points and drawing lines."""
         if event.xdata is None or event.ydata is None:
             return  # Ignore clicks outside the plot
+        if not self.visible_points:
+            self.visible_points = self._visible_unit_points()
+        if not self.visible_points:
+            return
         
         # Find the closest point
-        clicked_point = min(self.points, key=lambda p: np.linalg.norm([p[0] - event.xdata, p[1] - event.ydata])) 
+        clicked_point = min(self.visible_points, key=lambda p: np.linalg.norm([p[0] - event.xdata, p[1] - event.ydata]))
         line_style = self.line_style.get()       
         bars, strings, hw, vw = self.unit.create_lines(clicked_point, line_style)
         self.generate_graph(bars, strings, hw, vw)
 
     def generate_graph(self, bars, strings, hw, vw):
         """Generate a graph of the unit cell."""
-        self.ax.clear()
-        self.generate_grid()
-        for bar in bars:
-            x_vals, y_vals = zip(*bar)
-            line, = self.ax.plot(x_vals, y_vals, linestyle='-', color="blue")
-        for string in strings:
-            x_vals, y_vals = zip(*string)
-            line, = self.ax.plot(x_vals, y_vals, linestyle='--', color="red")
-        for hwrap in hw:
-            x_vals, y_vals = zip(*hwrap)
-            stub = (self.x_spacing if hasattr(self, 'x_spacing') else self.x_distance.get()) * 0.1
-            line, = self.ax.plot([max(x_vals), max(x_vals) + stub], [y_vals[x_vals.index(max(x_vals))], y_vals[x_vals.index(max(x_vals))]], linestyle='--', color="green")
-            line, = self.ax.plot([min(x_vals), min(x_vals) - stub], [y_vals[x_vals.index(min(x_vals))], y_vals[x_vals.index(min(x_vals))]], linestyle='--', color="green")
-        for vwrap in vw:
-            x_vals, y_vals = zip(*vwrap)
-            stub = (self.y_spacing if hasattr(self, 'y_spacing') else self.y_distance.get()) * 0.1
-            line, = self.ax.plot([x_vals[y_vals.index(max(y_vals))], x_vals[y_vals.index(max(y_vals))]], [max(y_vals), max(y_vals) + stub], linestyle='--', color="green")
-            line, = self.ax.plot([x_vals[y_vals.index(min(y_vals))], x_vals[y_vals.index(min(y_vals))]], [min(y_vals), min(y_vals) - stub], linestyle='--', color="green") 
-        set_equal_axes_limits(self.ax, self.points)
-        self.canvas.draw() 
+        self._redraw_unit_cell_graph()
 
     def quit_program(self):
         """Quit the entire application."""
@@ -775,7 +808,7 @@ class StructureBuilderApp:
 
     def _sync_structure_backend_state(self, is_self_similar):
         """Keep backend Structure attributes in sync for YAML generation and surfaces."""
-        self.structure_strings = _prune_multinode_segments(self.structure_strings, self.structure.multinode_strings)
+        self.structure_strings = be.prune_multinode_segments(self.structure_strings, self.structure.multinode_strings)
         self.structure.points = list({tuple(p) for p in self.structure_points})
         self.structure.unique_bars = [list(pair) for pair in self.structure_bars]
         self.structure.unique_strings = [list(pair) for pair in self.structure_strings]
@@ -783,6 +816,15 @@ class StructureBuilderApp:
         if is_self_similar:
             self.structure.outside_strings = [list(pair) for pair in self.structure_strings]
             self.structure.inside_strings = []
+        else:
+            self.structure.outside_strings = be.prune_multinode_segments(
+                self.structure.outside_strings,
+                self.structure.multinode_strings,
+            )
+            self.structure.inside_strings = be.prune_multinode_segments(
+                self.structure.inside_strings,
+                self.structure.multinode_strings,
+            )
 
         try:
             self.structure.generate_linked_nodes()
@@ -817,45 +859,30 @@ class StructureBuilderApp:
             if not self.structure_points:
                 return
             
-            # Find the nearest node to the click
-            nearest_node = min(self.structure_points, key=lambda p: np.linalg.norm([p[0] - event.xdata, p[1] - event.ydata]))
-            # Compute a selection radius proportional to the structure size so
-            # that selection works for very large or very small structures.
-            xs = [p[0] for p in self.structure_points]
-            ys = [p[1] for p in self.structure_points]
-            span_x = max(xs) - min(xs) if xs else 1.0
-            span_y = max(ys) - min(ys) if ys else 1.0
-            diag = max(span_x, span_y, 1.0)
-            selection_radius = max(0.02 * diag, 0.25)
-
-            distance = np.linalg.norm([nearest_node[0] - event.xdata, nearest_node[1] - event.ydata])
+            nearest_node, distance = be.nearest_point_2d(self.structure_points, event.xdata, event.ydata)
+            selection_radius = be.selection_radius_2d(self.structure_points)
 
             if distance < selection_radius:  # Only register clicks within a certain distance
-                # Compute pin half-length proportional to structure size
-                pin_span_x = span_x
-                pin_span_y = span_y
-                pin_diag = max(pin_span_x, pin_span_y, 1.0)
-                pin_half = max(0.04 * pin_diag, 0.2)
+                pin_half = be.pin_half_length_2d(self.structure_points)
 
                 if self.structure_element.get() == "x_pin":
-                    if nearest_node not in self.structure.x_pins:
+                    if self.structure.apply_pin_action(nearest_node, "x_pin"):
                         self.ax.plot([nearest_node[0], nearest_node[0]], [nearest_node[1] - pin_half, nearest_node[1] + pin_half], color="black", linewidth=4)
-                        self.structure.x_pins.append(nearest_node)
                         self.canvas.draw()
                 elif self.structure_element.get() == "y_pin":
-                    if nearest_node not in self.structure.y_pins:
+                    if self.structure.apply_pin_action(nearest_node, "y_pin"):
                         self.ax.plot([nearest_node[0] - pin_half, nearest_node[0] + pin_half], [nearest_node[1], nearest_node[1]], color="black", linewidth=4)
-                        self.structure.y_pins.append(nearest_node)
                         self.canvas.draw()
                 elif self.structure_element.get() == "unpin":
-                    if nearest_node in self.structure.x_pins:
-                        self.ax.plot([nearest_node[0], nearest_node[0]], [nearest_node[1] - pin_half, nearest_node[1] + pin_half], color="white", linewidth=4)
-                        self.structure.x_pins.remove(nearest_node)
-                    if nearest_node in self.structure.y_pins:
-                        self.ax.plot([nearest_node[0] - pin_half, nearest_node[0] + pin_half], [nearest_node[1], nearest_node[1]], color="white",linewidth=4)
-                        self.structure.y_pins.remove(nearest_node)
-                    self.ax.plot(nearest_node[0], nearest_node[1], color="black", linewidth=4)
-                    self.canvas.draw()
+                    had_x_pin = nearest_node in self.structure.x_pins
+                    had_y_pin = nearest_node in self.structure.y_pins
+                    if self.structure.apply_pin_action(nearest_node, "unpin"):
+                        if had_x_pin:
+                            self.ax.plot([nearest_node[0], nearest_node[0]], [nearest_node[1] - pin_half, nearest_node[1] + pin_half], color="white", linewidth=4)
+                        if had_y_pin:
+                            self.ax.plot([nearest_node[0] - pin_half, nearest_node[0] + pin_half], [nearest_node[1], nearest_node[1]], color="white",linewidth=4)
+                        self.ax.plot(nearest_node[0], nearest_node[1], color="black", linewidth=4)
+                        self.canvas.draw()
                 elif self.structure_element.get() == "multinode_string":
                     # Add node to current multinode string
                     if not self.structure.selected_points2 or nearest_node != self.structure.selected_points2[-1]:
@@ -874,7 +901,7 @@ class StructureBuilderApp:
             var_name = f"String{self.MNSindex}"
             copied_points = self.structure.selected_points2.copy()
             self.structure.multinode_strings.append({"name": var_name, "points": copied_points})
-            self.structure_strings = _prune_multinode_segments(self.structure_strings, self.structure.multinode_strings)
+            self.structure_strings = be.prune_multinode_segments(self.structure_strings, self.structure.multinode_strings)
             self.update_dropdown()
             self.structure.selected_points2.clear()
             self.generate_structure()
@@ -915,25 +942,12 @@ class StructureBuilderApp:
         return f"({point[0]} {point[1]})"
 
     def _is_linked_pair(self, point_a, point_b):
-        if not self.structure.linked_nodes:
-            return False
-        pair = {self._point_to_node_name(point_a), self._point_to_node_name(point_b)}
-        for linked in self.structure.linked_nodes:
-            if set(linked) == pair:
-                return True
-        return False
+        return self.structure.is_linked_pair(point_a, point_b)
 
     def _draw_horizontal_stub(self, point, min_x, max_x, stub_length, color, linewidth=2, linestyle='--'):
-        tol = 1e-9
         x, y = point
-        if abs(x - min_x) < tol:
-            x2 = x - stub_length
-        elif abs(x - max_x) < tol:
-            x2 = x + stub_length
-        else:
-            mid = (min_x + max_x) / 2.0
-            x2 = x - stub_length if x <= mid else x + stub_length
-        self.ax.plot([x, x2], [y, y], linestyle=linestyle, color=color, linewidth=linewidth)
+        x2, y2 = be.horizontal_stub_endpoint(point, min_x, max_x, stub_length)
+        self.ax.plot([x, x2], [y, y2], linestyle=linestyle, color=color, linewidth=linewidth)
 
     def _draw_multinode_segments(self, points, color, linewidth=2, linestyle='--'):
         if len(points) < 2:
@@ -983,14 +997,9 @@ class StructureBuilderApp:
         
         # Compute pin half-length proportional to structure span
         if self.structure_points:
-            xs_all = [p[0] for p in self.structure_points]
-            ys_all = [p[1] for p in self.structure_points]
-            span_x_all = max(xs_all) - min(xs_all)
-            span_y_all = max(ys_all) - min(ys_all)
+            pin_half_all = be.pin_half_length_2d(self.structure_points)
         else:
-            span_x_all = span_y_all = 1.0
-        pin_diag_all = max(span_x_all, span_y_all, 1.0)
-        pin_half_all = max(0.04 * pin_diag_all, 0.2)
+            pin_half_all = be.pin_half_length_2d([])
 
         for x_pin in self.structure.x_pins:
             self.ax.plot([x_pin[0], x_pin[0]], [x_pin[1] - pin_half_all, x_pin[1] + pin_half_all], color="black", linewidth=4)
@@ -1042,14 +1051,9 @@ class StructureBuilderApp:
         
         # Compute pin half-length proportional to structure span
         if self.structure_points:
-            xs_all = [p[0] for p in self.structure_points]
-            ys_all = [p[1] for p in self.structure_points]
-            span_x_all = max(xs_all) - min(xs_all)
-            span_y_all = max(ys_all) - min(ys_all)
+            pin_half_all = be.pin_half_length_2d(self.structure_points)
         else:
-            span_x_all = span_y_all = 1.0
-        pin_diag_all = max(span_x_all, span_y_all, 1.0)
-        pin_half_all = max(0.04 * pin_diag_all, 0.2)
+            pin_half_all = be.pin_half_length_2d([])
 
         for x_pin in self.structure.x_pins:
             self.ax.plot([x_pin[0], x_pin[0]], [x_pin[1] - pin_half_all, x_pin[1] + pin_half_all], color="black", linewidth=4)
@@ -1132,19 +1136,31 @@ class StructureBuilderApp:
         self.selected_controls = settings.get("control_names", [])
     
     def generate_yaml(self):
+        file_name = self.file_name.get()
+        if not file_name:
+            messagebox.showerror("Input Error", "Please set a file name in Builder Details.")
+            return
+
         names = [mns["name"] for mns in self.structure.multinode_strings]
         selected_controls = [name for name in self.selected_controls if name in names]
         self.selected_controls = selected_controls
-        self.structure.generate_yaml(
-            self.string_stiffness.get(),
-            self.bar_stiffness.get(),
-            self.string_initial_length_ratio.get(),
-            self.inside_string_initial_length_ratio.get(),
-            selected_controls,
-            self.file_name.get(),
-            self.cylinder_enabled.get(),
-            self.radius.get(),
-        )
+        try:
+            self.structure.generate_yaml(
+                self.string_stiffness.get(),
+                self.bar_stiffness.get(),
+                self.string_initial_length_ratio.get(),
+                self.inside_string_initial_length_ratio.get(),
+                selected_controls,
+                file_name,
+                self.cylinder_enabled.get(),
+                self.radius.get(),
+            )
+        except TensegrityError as error:
+            _show_gui_error("YAML Generation Error", error)
+            return
+        except Exception as error:
+            _show_gui_error("Unexpected YAML Error", error)
+            return
 
     def on_closing(self):
         """Handle closing the window."""
@@ -1223,20 +1239,21 @@ class BuilderDetailsWindow(tk.Toplevel):
         self.inside_string_initial_length_ratio = tk.DoubleVar(value=initial_settings["inside_string_initial_length_ratio"])
         tk.Entry(frm, textvariable=self.inside_string_initial_length_ratio, width=10).grid(row=3, column=1, sticky="w", pady=4)
 
-        # Cylinder Checkbox
+        self.cylinder_checkbox = None
+        self.radius_entry = None
         self.cylinder_enabled = tk.BooleanVar(value=initial_settings.get("cylinder_enabled", False))
         # Use parent app's cylinder_enabled if available (for synchronization)
         if parent_app and hasattr(parent_app, 'cylinder_enabled'):
             self.cylinder_enabled = parent_app.cylinder_enabled
-        cylinder_label = "Cylinder" if self._parent_supports_cylinder() else "Cylinder (2D only)"
-        self.cylinder_checkbox = tk.Checkbutton(frm, text=cylinder_label, variable=self.cylinder_enabled, command=self._toggle_radius)
-        self.cylinder_checkbox.grid(row=5, column=0, sticky="w", pady=4)
-
-        # Radius Input
-        tk.Label(frm, text="Radius:").grid(row=5, column=1, sticky="w", padx=(0, 5), pady=4)
         self.radius = tk.DoubleVar(value=initial_settings.get("radius", 0.0))
-        self.radius_entry = tk.Entry(frm, textvariable=self.radius, width=10)
-        self.radius_entry.grid(row=5, column=1, sticky="e", pady=4)
+
+        if self._parent_supports_cylinder():
+            self.cylinder_checkbox = tk.Checkbutton(frm, text="Cylinder", variable=self.cylinder_enabled, command=self._toggle_radius)
+            self.cylinder_checkbox.grid(row=5, column=0, sticky="w", pady=4)
+
+            tk.Label(frm, text="Radius:").grid(row=5, column=1, sticky="w", padx=(0, 5), pady=4)
+            self.radius_entry = tk.Entry(frm, textvariable=self.radius, width=10)
+            self.radius_entry.grid(row=5, column=1, sticky="e", pady=4)
         
         # Set initial state of radius entry
         self._toggle_radius()
@@ -1278,6 +1295,8 @@ class BuilderDetailsWindow(tk.Toplevel):
 
     def _toggle_radius(self):
         """Enable or disable radius entry based on cylinder checkbox."""
+        if self.radius_entry is None:
+            return
         if self._parent_supports_cylinder() and self.cylinder_enabled.get():
             self.radius_entry.config(state="normal")
         else:
@@ -1297,7 +1316,8 @@ class BuilderDetailsWindow(tk.Toplevel):
         if not enabled:
             self.cylinder_enabled.set(False)
 
-        self.cylinder_checkbox.config(state="normal" if enabled else "disabled")
+        if self.cylinder_checkbox is not None:
+            self.cylinder_checkbox.config(state="normal" if enabled else "disabled")
         self._toggle_radius()
 
     def _save(self):
@@ -1586,6 +1606,15 @@ class UnitCellBuilderApp3D:
         )
         self.node_positions_toggle.pack(side=tk.LEFT, padx=5)
 
+        self.hide_unconnected_nodes = tk.BooleanVar(value=False)
+        self.hide_unconnected_toggle = tk.Checkbutton(
+            line_control_frame,
+            text="Hide unconnected nodes",
+            variable=self.hide_unconnected_nodes,
+            command=self.update_grid_display
+        )
+        self.hide_unconnected_toggle.pack(side=tk.LEFT, padx=5)
+
         # Initialize tooltip
         self.tooltip_window = None
 
@@ -1638,6 +1667,7 @@ class UnitCellBuilderApp3D:
         self.x_connectors = self.unit.x_connectors
         self.y_connectors = self.unit.y_connectors
         self.z_connectors = self.unit.z_connectors
+        self.visible_points = []
     
         # Generate initial grid
         self.generate_grid()
@@ -1678,13 +1708,8 @@ class UnitCellBuilderApp3D:
             if point not in self.points:
                 self.points.append(point)
 
-        # Scatter plot of points with picking enabled
-        if self.points:
-            x_vals, y_vals, z_vals = zip(*self.points)
-            self.ax.scatter(x_vals, y_vals, z_vals, color="black", s=50, picker=5)
-
         self.unit.clear_lines()
-        self.canvas.draw()
+        self.redraw_3d_graph()
 
     def add_custom_node(self, point):
         """Add a custom 3D node to the current grid and redraw."""
@@ -1733,7 +1758,9 @@ class UnitCellBuilderApp3D:
     def on_left_click(self, event):
         """Handle click events for selecting points and drawing lines in 3D."""
         try:
-            if not self.points:
+            if not self.visible_points:
+                self.visible_points = self._visible_unit_points_3d()
+            if not self.visible_points:
                 return
             
             if not hasattr(event, 'ind') or event.ind is None or len(event.ind) == 0:
@@ -1743,10 +1770,10 @@ class UnitCellBuilderApp3D:
             ind_value = event.ind[0]
             ind = ind_value.item() if hasattr(ind_value, "item") else int(ind_value)
             
-            if ind < 0 or ind >= len(self.points):
+            if ind < 0 or ind >= len(self.visible_points):
                 return
             
-            clicked_point = self.points[ind]
+            clicked_point = self.visible_points[ind]
             self.unit.create_lines(clicked_point, self.line_style.get())
             
             self.redraw_3d_graph()
@@ -1762,9 +1789,14 @@ class UnitCellBuilderApp3D:
         self.ax.set_ylabel('Y')
         self.ax.set_zlabel('Z')
 
-        if self.points:
-            x_vals, y_vals, z_vals = zip(*self.points)
+        self.visible_points = self._visible_unit_points_3d()
+        if self.visible_points:
+            x_vals, y_vals, z_vals = zip(*self.visible_points)
             self.ax.scatter(x_vals, y_vals, z_vals, color="black", s=50, picker=5)
+
+            if self.show_node_positions.get():
+                for i, (x, y, z) in enumerate(self.visible_points):
+                    self.ax.text(x, y, z, f"[{x}, {y}, {z}]", fontsize=8)
 
         for bar in self.bars:
             x_vals = [bar[0][0], bar[1][0]]
@@ -1875,49 +1907,20 @@ class UnitCellBuilderApp3D:
         button.bind("<Enter>", on_enter)
         button.bind("<Leave>", on_leave)
 
+    def _visible_unit_points_3d(self):
+        return be.visible_unit_points(
+            self.points,
+            self.hide_unconnected_nodes.get(),
+            self.bars,
+            self.strings,
+            self.x_connectors,
+            self.y_connectors,
+            self.z_connectors,
+        )
+
     def update_grid_display(self):
         """Update the grid display when node positions toggle changes."""
-        if not self.points:
-            return
-        
-        self.ax.clear()
-        self.ax.set_xlabel('X')
-        self.ax.set_ylabel('Y')
-        self.ax.set_zlabel('Z')
-        
-        # Scatter plot of points with picking enabled
-        if self.points:
-            x_vals, y_vals, z_vals = zip(*self.points)
-            self.ax.scatter(x_vals, y_vals, z_vals, color="black", s=50, picker=5)
-
-        # Label points only if toggle is enabled
-        if self.show_node_positions.get():
-            for i, (x, y, z) in enumerate(self.points):
-                self.ax.text(x, y, z, f"[{x}, {y}, {z}]", fontsize=8)
-        
-        # Redraw bars and strings
-        for bar in self.bars:
-            x_vals = [bar[0][0], bar[1][0]]
-            y_vals = [bar[0][1], bar[1][1]]
-            z_vals = [bar[0][2], bar[1][2]]
-            self.ax.plot(x_vals, y_vals, z_vals, linestyle='-', color="blue", linewidth=2)
-
-        for string in self.strings:
-            x_vals = [string[0][0], string[1][0]]
-            y_vals = [string[0][1], string[1][1]]
-            z_vals = [string[0][2], string[1][2]]
-            self.ax.plot(x_vals, y_vals, z_vals, linestyle='--', color="red", linewidth=2)
-
-        for connector in self.x_connectors:
-            self._draw_connector_guides(connector, axis="x", color="green")
-
-        for connector in self.y_connectors:
-            self._draw_connector_guides(connector, axis="y", color="purple")
-
-        for connector in self.z_connectors:
-            self._draw_connector_guides(connector, axis="z", color="orange")
-        
-        self.canvas.draw()
+        self.redraw_3d_graph()
 
     def on_closing(self):
         """Handle window closing."""
@@ -2270,10 +2273,12 @@ class StructureBuilderApp3D:
         _show_instructions_window(self.root, "3D Structure Instructions", _STRUCTURE_3D_INSTRUCTIONS)
 
     def _prune_pins_to_structure(self):
-        valid_nodes = set(self.structure_points)
-        self.x_pins = [point for point in self.x_pins if point in valid_nodes]
-        self.y_pins = [point for point in self.y_pins if point in valid_nodes]
-        self.z_pins = [point for point in self.z_pins if point in valid_nodes]
+        self.x_pins, self.y_pins, self.z_pins = be.prune_pin_lists_to_points(
+            self.structure_points,
+            self.x_pins,
+            self.y_pins,
+            self.z_pins,
+        )
 
     def _draw_structure(self):
         self.ax.clear()
@@ -2281,7 +2286,7 @@ class StructureBuilderApp3D:
         self.ax.set_ylabel('Y')
         self.ax.set_zlabel('Z')
 
-        self.structure_strings = _prune_multinode_segments(self.structure_strings, self.multinode_strings)
+        self.structure_strings = be.prune_multinode_segments(self.structure_strings, self.multinode_strings)
 
         visible_nodes = self.structure_exporter.connected_nodes(
             self.structure_bars,
@@ -2352,22 +2357,8 @@ class StructureBuilderApp3D:
         nearest_node = self.structure_points[ind]
         element = self.structure_element.get()
 
-        if element == "x_pin":
-            if nearest_node not in self.x_pins:
-                self.x_pins.append(nearest_node)
-        elif element == "y_pin":
-            if nearest_node not in self.y_pins:
-                self.y_pins.append(nearest_node)
-        elif element == "z_pin":
-            if nearest_node not in self.z_pins:
-                self.z_pins.append(nearest_node)
-        elif element == "unpin":
-            if nearest_node in self.x_pins:
-                self.x_pins.remove(nearest_node)
-            if nearest_node in self.y_pins:
-                self.y_pins.remove(nearest_node)
-            if nearest_node in self.z_pins:
-                self.z_pins.remove(nearest_node)
+        if element in ("x_pin", "y_pin", "z_pin", "unpin"):
+            be.apply_pin_action_3d(self.x_pins, self.y_pins, self.z_pins, nearest_node, element)
         elif element == "multinode_string":
             if not self.selected_points2 or nearest_node != self.selected_points2[-1]:
                 self.selected_points2.append(nearest_node)
@@ -2382,7 +2373,7 @@ class StructureBuilderApp3D:
         if len(self.selected_points2) > 1:
             self.MNSindex += 1
             self.multinode_strings.append({"name": f"String{self.MNSindex}", "points": self.selected_points2.copy()})
-            self.structure_strings = _prune_multinode_segments(self.structure_strings, self.multinode_strings)
+            self.structure_strings = be.prune_multinode_segments(self.structure_strings, self.multinode_strings)
             self.selected_points2.clear()
             self.update_dropdown()
             self._draw_structure()
@@ -2500,20 +2491,27 @@ class StructureBuilderApp3D:
         names = [mns["name"] for mns in self.multinode_strings]
         selected_controls = [name for name in self.selected_controls if name in names]
         self.selected_controls = selected_controls
-        self.structure_exporter.generate_yaml(
-            self.structure_points,
-            self.structure_bars,
-            self.structure_strings,
-            self.multinode_strings,
-            self.x_pins,
-            self.y_pins,
-            self.z_pins,
-            self.string_stiffness.get(),
-            self.bar_stiffness.get(),
-            self.string_initial_length_ratio.get(),
-            selected_controls,
-            file_name,
-        )
+        try:
+            self.structure_exporter.generate_yaml(
+                self.structure_points,
+                self.structure_bars,
+                self.structure_strings,
+                self.multinode_strings,
+                self.x_pins,
+                self.y_pins,
+                self.z_pins,
+                self.string_stiffness.get(),
+                self.bar_stiffness.get(),
+                self.string_initial_length_ratio.get(),
+                selected_controls,
+                file_name,
+            )
+        except TensegrityError as error:
+            _show_gui_error("YAML Generation Error", error)
+            return
+        except Exception as error:
+            _show_gui_error("Unexpected YAML Error", error)
+            return
         messagebox.showinfo("Success", f"Generated YAML file: {file_name}.yaml")
 
     def show_tooltip(self, text, x, y):

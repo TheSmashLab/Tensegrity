@@ -1,8 +1,16 @@
 import numpy as np
+from dataclasses import dataclass
 from typing import Dict
 from scipy.optimize import root
 
 from .data_structures import Connection, Tensegrity
+
+
+@dataclass
+class SolverResult:
+    success: bool
+    message: str
+    scipy_result: object = None
 
 
 class TensegritySolver:
@@ -54,7 +62,7 @@ class TensegritySolver:
             index = self.node_indices[node]
             self.forces[index*self.dim : index*self.dim + self.dim] = force
 
-    def solve(self, method: str = "lm") -> None:
+    def solve(self, method: str = "lm") -> SolverResult:
         """
         Solves the position of nodes in the tensegrity structure.
         
@@ -65,32 +73,34 @@ class TensegritySolver:
             method (str): The method to use for the root function (default is "lm").
         
         Returns:
-            None. Changes are made internally to the Tensegrity object.
+            SolverResult. On success, changes are made internally to the Tensegrity object.
         """
         x0 = self._create_initial_guess() # The current positions of the nodes (excluding pinned nodes)
 
         result = root(self._objective, x0, method=method) # solver
 
         if not result.success:
-            print(result)
-            print("Optimization failed.")
-            print("Retrying with perturbed initial guess.")
-
             x0 = x0 + np.random.normal(0, 0.1, len(x0))
             result = root(self._objective, x0, method=method)
 
             if not result.success:
-                print(result)
-                print("Optimization failed again.")
-                return
+                return SolverResult(
+                    False,
+                    f"Solver could not converge: {result.message}",
+                    result,
+                )
 
         N = self._get_nodes_from_input(result.x)
 
         # update the positions of the nodes
         for i, node in enumerate(self.tensegrity.nodes):
-            node.position = N[i]
+            position = np.array(node.position, dtype=float)
+            position[:self.dim] = N[i]
+            node.position = position
 
         self.tensegrity.update_forces()
+
+        return SolverResult(True, "Solver converged.", result)
 
 
     # --------------------- INTERNAL FUNCTIONS ---------------------
@@ -331,7 +341,7 @@ class TensegritySolver:
             for i in range(self.dim):
                 if bools[i]:
                     ins_index[index + i] = self.tensegrity.nodes[self.node_indices[node]].position[i]
-        for index, value in ins_index.items():
+        for index, value in sorted(ins_index.items()):
             x = np.insert(x, index, value)
 
         x = x.reshape(-1, self.dim)
