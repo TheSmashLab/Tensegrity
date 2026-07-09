@@ -3,6 +3,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import main as main_module
 from main import infer_visualization_dimension
 from TensegritySim import YamlParser
 from TensegritySim.data_structures import Node, Tensegrity
@@ -49,3 +50,20 @@ def test_needle_trunk_yaml_is_inferred_as_3d():
     tensegrity = YamlParser.parse(os.path.join("yaml", "needle_trunk.yaml"))
 
     assert infer_visualization_dimension(tensegrity) == 3
+
+
+def test_main_routes_to_ui_by_default(monkeypatch):
+    calls = []
+
+    def fake_parse(_file):
+        return Tensegrity(nodes=[Node("A", [0.0, 0.0, 0.0])], connections=[])
+
+    def fake_run_ui(file, tensegrity):
+        calls.append((file, tensegrity))
+        return 0
+
+    monkeypatch.setattr(main_module.YamlParser, "parse", fake_parse)
+    monkeypatch.setattr(main_module, "run_ui", fake_run_ui)
+
+    assert main_module.main("example.yaml") == 0
+    assert calls[0][0] == "example.yaml"

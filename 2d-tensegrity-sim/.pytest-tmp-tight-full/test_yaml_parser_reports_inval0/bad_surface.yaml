@@ -1,0 +1,16 @@
+
+nodes:
+  A: [0, 0, 0]
+  B: [1, 0, 0]
+connections:
+  bars:
+    - [A, B]
+builders:
+  bars:
+    stiffness: 1
+    type: bar
+surface:
+  cylinder:
+    radius: 0
+  linked_nodes:
+    - [A, B]

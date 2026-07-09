@@ -57,27 +57,16 @@ def _solve_and_plot(solver, viz, tensegrity_system, show_forces=False):
     return True
 
 
-def main(file):
-    try:
-        # Load the tensegrity system from the YAML file
-        tensegrity_system = YamlParser.parse(file)
+def run_cli(tensegrity_system):
+    """Runs the original terminal-driven control loop."""
+    viz = Visualization(tensegrity_system, dim=infer_visualization_dimension(tensegrity_system))
 
-        # Create the visualization object
-        viz = Visualization(tensegrity_system, dim=infer_visualization_dimension(tensegrity_system))
+    # Plot the initial tensegrity system
+    viz.plot(label_nodes=False, label_connections=True)
 
-
-        # Plot the initial tensegrity system
-        viz.plot(label_nodes=False, label_connections=True)
-
-        # Solve the tensegrity system
-        solver = TensegritySolver(tensegrity_system, dim=viz.dim)
-        _solve_and_plot(solver, viz, tensegrity_system)
-    except TensegrityError as exc:
-        print(f"Error: {exc}")
-        return 1
-    except Exception as exc:
-        print(f"Unexpected error: {exc}")
-        return 1
+    # Solve the tensegrity system
+    solver = TensegritySolver(tensegrity_system, dim=viz.dim)
+    _solve_and_plot(solver, viz, tensegrity_system)
 
     show_forces = False
 
@@ -112,9 +101,34 @@ def main(file):
     return 0
 
 
+def run_ui(file, tensegrity_system):
+    """Runs the Tk simulation UI."""
+    from TensegritySim.simulation_ui import SimulationUI
+
+    dim = infer_visualization_dimension(tensegrity_system)
+    app = SimulationUI(tensegrity_system, dim=dim, title=f"Tensegrity Simulator - {file}")
+    return app.run()
+
+
+def main(file, cli=False):
+    try:
+        # Load the tensegrity system from the YAML file
+        tensegrity_system = YamlParser.parse(file)
+        if cli:
+            return run_cli(tensegrity_system)
+        return run_ui(file, tensegrity_system)
+    except TensegrityError as exc:
+        print(f"Error: {exc}")
+        return 1
+    except Exception as exc:
+        print(f"Unexpected error: {exc}")
+        return 1
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tensegrity Simulator")
     parser.add_argument("filename", help="YAML file to load", default="yaml/1-box.yaml")
+    parser.add_argument("--cli", action="store_true", help="Use the original terminal control loop instead of the UI.")
 
     args = vars(parser.parse_args())
-    raise SystemExit(main(file=args["filename"]))
+    raise SystemExit(main(file=args["filename"], cli=args["cli"]))

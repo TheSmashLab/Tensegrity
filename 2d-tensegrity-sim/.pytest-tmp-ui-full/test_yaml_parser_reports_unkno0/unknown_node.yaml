@@ -1,0 +1,10 @@
+
+nodes:
+  A: [0, 0, 0]
+connections:
+  bars:
+    - [A, B]
+builders:
+  bars:
+    stiffness: 1
+    type: bar

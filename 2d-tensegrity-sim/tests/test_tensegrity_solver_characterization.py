@@ -131,10 +131,10 @@ def test_solve_success_updates_only_optimized_dimensions_and_refreshes_forces(mo
     tensegrity, connection = _two_node_tensegrity(initial_length=1.0)
     tensegrity.pins = {"A": [True, True, False]}
 
-    def successful_root(*args, **kwargs):
-        return SimpleNamespace(success=True, message="ok", x=np.array([1.0, 0.0]))
+    def successful_least_squares(*args, **kwargs):
+        return SimpleNamespace(success=True, message="ok", x=np.array([1.0, 0.0]), fun=np.zeros(2))
 
-    monkeypatch.setattr("TensegritySim.tensegrity_solver.root", successful_root)
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", successful_least_squares)
 
     result = TensegritySolver(tensegrity, dim=2).solve()
 
@@ -148,12 +148,77 @@ def test_3d_solve_updates_z_coordinate_when_dim_is_three(monkeypatch):
     tensegrity, _ = _two_node_tensegrity(initial_length=1.0)
     tensegrity.pins = {"A": [True, True, True]}
 
-    def successful_root(*args, **kwargs):
-        return SimpleNamespace(success=True, message="ok", x=np.array([1.0, 2.0, 3.0]))
+    def successful_least_squares(*args, **kwargs):
+        return SimpleNamespace(success=True, message="ok", x=np.array([1.0, 2.0, 3.0]), fun=np.zeros(3))
 
-    monkeypatch.setattr("TensegritySim.tensegrity_solver.root", successful_root)
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", successful_least_squares)
 
     result = TensegritySolver(tensegrity, dim=3).solve()
 
     assert result.success
     np.testing.assert_allclose(tensegrity.nodes[1].position, np.array([1.0, 2.0, 3.0]))
+
+
+def test_solve_rejects_null_force_solution_for_prestressed_strings(monkeypatch):
+    tensegrity, connection = _two_node_tensegrity(
+        connection_type=Connection.ConnectionType.STRING,
+        initial_length=1.0,
+    )
+    tensegrity.pins = {"A": [True, True, False]}
+    original_position = tensegrity.nodes[1].position.copy()
+
+    def slack_least_squares(*args, **kwargs):
+        return SimpleNamespace(success=True, message="ok", x=np.array([0.5, 0.0]), fun=np.zeros(2))
+
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", slack_least_squares)
+
+    result = TensegritySolver(tensegrity, dim=2).solve(attempts=1)
+
+    assert not result.success
+    assert "null-force" in result.message
+    np.testing.assert_allclose(tensegrity.nodes[1].position, original_position)
+    assert connection.force == pytest.approx(10.0)
+
+
+def test_solve_rejects_null_solution_even_if_current_positions_are_slack(monkeypatch):
+    tensegrity, _ = _two_node_tensegrity(
+        connection_type=Connection.ConnectionType.STRING,
+        initial_length=1.0,
+    )
+    tensegrity.pins = {"A": [True, True, False]}
+    tensegrity.nodes[1].position = np.array([0.5, 0.0, 0.0])
+    tensegrity.update_forces()
+
+    def slack_least_squares(*args, **kwargs):
+        return SimpleNamespace(success=True, message="ok", x=np.array([0.5, 0.0]), fun=np.zeros(2))
+
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", slack_least_squares)
+
+    result = TensegritySolver(tensegrity, dim=2).solve(attempts=1)
+
+    assert not result.success
+    assert "1/1 members" in result.message
+
+
+def test_solve_retries_and_accepts_non_null_force_solution(monkeypatch):
+    tensegrity, _ = _two_node_tensegrity(
+        connection_type=Connection.ConnectionType.STRING,
+        initial_length=1.0,
+    )
+    tensegrity.pins = {"A": [True, True, False]}
+    results = iter(
+        [
+            SimpleNamespace(success=True, message="slack", x=np.array([0.5, 0.0]), fun=np.zeros(2)),
+            SimpleNamespace(success=True, message="taut", x=np.array([1.25, 0.0]), fun=np.zeros(2)),
+        ]
+    )
+
+    def retrying_least_squares(*args, **kwargs):
+        return next(results)
+
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", retrying_least_squares)
+
+    result = TensegritySolver(tensegrity, dim=2).solve(attempts=2)
+
+    assert result.success
+    np.testing.assert_allclose(tensegrity.nodes[1].position, np.array([1.25, 0.0, 0.0]))

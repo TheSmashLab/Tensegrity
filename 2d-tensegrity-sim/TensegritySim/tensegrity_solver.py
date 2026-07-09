@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict
-from scipy.optimize import root
+from scipy.optimize import least_squares, root
 
 from .data_structures import Connection, Tensegrity
 
@@ -62,23 +62,90 @@ class TensegritySolver:
             index = self.node_indices[node]
             self.forces[index*self.dim : index*self.dim + self.dim] = force
 
-    def solve(self, method: str = "lm") -> SolverResult:
+    def solve(
+        self,
+        method: str = "least_squares",
+        attempts: int = 8,
+        perturbation: float = 0.05,
+        residual_tol: float = 1e-6,
+        force_tol: float = 1e-8,
+        max_zero_force_fraction: float = 0.5,
+        random_seed: int = 0,
+    ) -> SolverResult:
         """
         Solves the position of nodes in the tensegrity structure.
         
-        This method uses the root function from the scipy.optimize module to find the positions of the nodes
-        in the tensegrity structure with Virtual Work.
+        This method solves for zero virtual work. By default it uses a least-squares
+        residual solve with several initial guesses, then rejects numerical successes
+        that leave a prestressed structure with most members carrying zero force.
         
         Args:
-            method (str): The method to use for the root function (default is "lm").
+            method (str): "least_squares" for the robust default path, or a scipy.optimize.root method.
+            attempts (int): Number of initial guesses to try for the least-squares path.
+            perturbation (float): Relative random perturbation size for retry guesses.
+            residual_tol (float): Maximum acceptable objective residual norm.
+            force_tol (float): Force magnitude treated as zero when checking null solutions.
+            max_zero_force_fraction (float): Reject prestressed solutions with at least this fraction
+                of zero-force connections.
+            random_seed (int): Seed for deterministic retry perturbations.
         
         Returns:
             SolverResult. On success, changes are made internally to the Tensegrity object.
         """
+        if method != "least_squares":
+            return self._solve_with_root(method, force_tol, max_zero_force_fraction)
+
         x0 = self._create_initial_guess() # The current positions of the nodes (excluding pinned nodes)
+        if len(x0) == 0:
+            self.tensegrity.update_forces()
+            return SolverResult(True, "No free coordinates to solve.", None)
 
+        guesses = self._create_initial_guesses(x0, attempts, perturbation, random_seed)
+        best_result = None
+        best_residual_norm = np.inf
+
+        for guess in guesses:
+            result = least_squares(
+                self._objective,
+                guess,
+                method="trf",
+                x_scale="jac",
+                max_nfev=5000,
+            )
+            residual_norm = self._residual_norm(result)
+            if residual_norm < best_residual_norm:
+                best_result = result
+                best_residual_norm = residual_norm
+
+            if not result.success or residual_norm > residual_tol:
+                continue
+
+            N = self._get_nodes_from_input(result.x)
+            if self._is_null_force_solution(N, force_tol, max_zero_force_fraction):
+                continue
+
+            self._update_node_positions(N)
+            self.tensegrity.update_forces()
+            return SolverResult(True, "Solver converged.", result)
+
+        if best_result is not None and best_result.success and best_residual_norm <= residual_tol:
+            N = self._get_nodes_from_input(best_result.x)
+            if self._is_null_force_solution(N, force_tol, max_zero_force_fraction):
+                return SolverResult(
+                    False,
+                    self._null_force_message(N, force_tol),
+                    best_result,
+                )
+
+        message = "Solver could not converge."
+        if best_result is not None:
+            message = f"Solver could not converge: residual norm {best_residual_norm:.3e}; {best_result.message}"
+
+        return SolverResult(False, message, best_result)
+
+    def _solve_with_root(self, method: str, force_tol: float, max_zero_force_fraction: float) -> SolverResult:
+        x0 = self._create_initial_guess()
         result = root(self._objective, x0, method=method) # solver
-
         if not result.success:
             x0 = x0 + np.random.normal(0, 0.1, len(x0))
             result = root(self._objective, x0, method=method)
@@ -91,17 +158,101 @@ class TensegritySolver:
                 )
 
         N = self._get_nodes_from_input(result.x)
+        if self._is_null_force_solution(N, force_tol, max_zero_force_fraction):
+            return SolverResult(
+                False,
+                self._null_force_message(N, force_tol),
+                result,
+            )
 
+        self._update_node_positions(N)
+        self.tensegrity.update_forces()
+
+        return SolverResult(True, "Solver converged.", result)
+
+    def _create_initial_guesses(
+        self,
+        x0: np.ndarray,
+        attempts: int,
+        perturbation: float,
+        random_seed: int,
+    ) -> list[np.ndarray]:
+        attempts = max(1, attempts)
+        guesses = [x0]
+        if attempts == 1:
+            return guesses
+
+        rng = np.random.default_rng(random_seed)
+        scale = perturbation * max(1.0, np.linalg.norm(x0) / np.sqrt(len(x0)))
+        for _ in range(attempts - 1):
+            guesses.append(x0 + rng.normal(0.0, scale, len(x0)))
+        return guesses
+
+    def _residual_norm(self, result) -> float:
+        residual = result.fun if hasattr(result, "fun") else self._objective(result.x)
+        return float(np.linalg.norm(residual))
+
+    def _update_node_positions(self, N: np.ndarray) -> None:
         # update the positions of the nodes
         for i, node in enumerate(self.tensegrity.nodes):
             position = np.array(node.position, dtype=float)
             position[:self.dim] = N[i]
             node.position = position
 
-        self.tensegrity.update_forces()
+    def _is_null_force_solution(
+        self,
+        N: np.ndarray,
+        force_tol: float,
+        max_zero_force_fraction: float,
+    ) -> bool:
+        if not self._expects_internal_force(force_tol):
+            return False
 
-        return SolverResult(True, "Solver converged.", result)
+        forces = np.array([self._connection_force(connection, N) for connection in self.tensegrity.connections])
+        if len(forces) == 0:
+            return False
 
+        zero_force_fraction = np.count_nonzero(np.abs(forces) <= force_tol) / len(forces)
+        return zero_force_fraction >= max_zero_force_fraction
+
+    def _expects_internal_force(self, force_tol: float) -> bool:
+        if np.linalg.norm(self.forces) > force_tol:
+            return True
+
+        for connection in self.tensegrity.connections:
+            if connection.connection_type != Connection.ConnectionType.STRING:
+                continue
+            if self._reference_connection_length(connection) > connection.initial_length:
+                return True
+        return False
+
+    def _reference_connection_length(self, connection: Connection) -> float:
+        length = 0
+        linked_nodes = self.tensegrity.surface.linked_nodes if self.tensegrity.surface else []
+        for i in range(len(connection.nodes_original) - 1):
+            node1 = connection.nodes_original[i]
+            node2 = connection.nodes_original[i + 1]
+            if {node1.name, node2.name} in linked_nodes:
+                continue
+            length += np.linalg.norm(node1.position[:self.dim] - node2.position[:self.dim])
+        return length
+
+    def _connection_force(self, connection: Connection, N: np.ndarray) -> float:
+        current_length = self._connection_length(connection, N)
+        force = connection.stiffness * (current_length - connection.initial_length)
+        if connection.connection_type == Connection.ConnectionType.STRING:
+            force = max(0, force)
+        return force
+
+    def _null_force_message(self, N: np.ndarray, force_tol: float) -> str:
+        forces = np.array([self._connection_force(connection, N) for connection in self.tensegrity.connections])
+        zero_force_count = np.count_nonzero(np.abs(forces) <= force_tol)
+        max_force = float(np.max(np.abs(forces))) if len(forces) else 0.0
+        return (
+            "Solver converged to a null-force solution; "
+            f"{zero_force_count}/{len(forces)} members are below {force_tol:g} force "
+            f"(max |force| {max_force:.3e})."
+        )
 
     # --------------------- INTERNAL FUNCTIONS ---------------------
     def _objective(self, x: np.ndarray) -> np.ndarray:
@@ -158,12 +309,12 @@ class TensegritySolver:
                     virtual_work[self.node_indices[node1]*self.dim + 1] += virtual_work[self.node_indices[node2]*self.dim + 1]
                     delete_indices.add(self.node_indices[node2]*self.dim + 1)
 
-            virtual_work = np.delete(virtual_work, list(delete_indices))
+            virtual_work = np.delete(virtual_work, sorted(delete_indices))
 
             objective = np.append(virtual_work, self._surface_constraints(x))
 
         else:
-            objective = np.delete(virtual_work, list(delete_indices))
+            objective = np.delete(virtual_work, sorted(delete_indices))
 
         return objective
 

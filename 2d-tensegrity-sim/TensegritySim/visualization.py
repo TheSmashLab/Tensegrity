@@ -16,7 +16,7 @@ class Visualization:
         fig (Figure): Matplotlib figure object.
         ax (Axes): Matplotlib axes object.
     """
-    def __init__(self, tensegrity: Tensegrity, dim: int = 2):
+    def __init__(self, tensegrity: Tensegrity, dim: int = 2, auto_show: bool = True):
         """
         Initializes a Visualization object.
 
@@ -30,6 +30,7 @@ class Visualization:
         self.tensegrity = tensegrity
 
         self.dim = dim
+        self.auto_show = auto_show
 
         if dim == 2:
             self.fig, self.ax = plt.subplots()
@@ -45,7 +46,11 @@ class Visualization:
         self._node_hover_artists = []
         self._node_hover_info = {}
         self._view_initialized = False
-        self.fig.canvas.mpl_connect("motion_notify_event", self._on_hover)
+        self._pan_start = None
+        self._current_plot_positions = np.empty((0, self.dim))
+        self.fig.canvas.mpl_connect("button_press_event", self._on_button_press)
+        self.fig.canvas.mpl_connect("button_release_event", self._on_button_release)
+        self.fig.canvas.mpl_connect("motion_notify_event", self._on_motion)
         self.fig.canvas.mpl_connect("scroll_event", self._on_scroll)
 
         # assign distinct colors for control connections
@@ -292,6 +297,93 @@ class Visualization:
         self._view_initialized = True
         self.fig.canvas.draw_idle()
 
+    def fit_view(self):
+        """Fits the current structure in the visible plot area."""
+        if self._current_plot_positions.size == 0:
+            if self.dim == 3:
+                positions = np.array([node.position[:3] for node in self.tensegrity.nodes], dtype=float)
+            else:
+                positions = np.array([node.position[:2] for node in self.tensegrity.nodes], dtype=float)
+        else:
+            positions = self._current_plot_positions
+
+        self._set_initial_view(positions)
+        if self.dim == 3:
+            self.set_3d_equal_scaling(self.ax)
+        self._view_initialized = True
+        self.fig.canvas.draw_idle()
+
+    def reset_camera(self):
+        """Resets the camera angle and fits the current structure."""
+        self._view_initialized = False
+        self.fit_view()
+
+    def _on_button_press(self, event):
+        """Starts a plot pan interaction when the pointer is inside the axes."""
+        if event.inaxes != self.ax or event.x is None or event.y is None:
+            return
+
+        should_pan = (self.dim == 2 and event.button == 1) or event.button in (2, 3)
+        if not should_pan:
+            return
+
+        if self.dim == 3:
+            limits = {
+                "xlim": self.ax.get_xlim3d(),
+                "ylim": self.ax.get_ylim3d(),
+                "zlim": self.ax.get_zlim3d(),
+            }
+        else:
+            limits = {
+                "xlim": self.ax.get_xlim(),
+                "ylim": self.ax.get_ylim(),
+            }
+        self._pan_start = {"x": event.x, "y": event.y, "limits": limits}
+
+    def _on_button_release(self, _event):
+        """Ends an active pan interaction."""
+        self._pan_start = None
+
+    def _on_motion(self, event):
+        """Routes pointer movement to pan or hover behavior."""
+        if self._pan_start is not None:
+            self._pan_view(event)
+            return
+        self._on_hover(event)
+
+    def _on_pan(self, event):
+        """Compatibility alias for external callers that want to drive panning."""
+        self._pan_view(event)
+
+    def _pan_view(self, event):
+        """Pans the plot based on pointer movement in screen pixels."""
+        if self._pan_start is None or event.inaxes != self.ax or event.x is None or event.y is None:
+            return
+
+        dx_px = event.x - self._pan_start["x"]
+        dy_px = event.y - self._pan_start["y"]
+        bbox = self.ax.bbox
+        if bbox.width <= 0 or bbox.height <= 0:
+            return
+
+        limits = self._pan_start["limits"]
+        xlim = limits["xlim"]
+        ylim = limits["ylim"]
+        dx_data = -dx_px / bbox.width * (xlim[1] - xlim[0])
+        dy_data = -dy_px / bbox.height * (ylim[1] - ylim[0])
+
+        if self.dim == 3:
+            zlim = limits["zlim"]
+            self.ax.set_xlim3d(xlim[0] + dx_data, xlim[1] + dx_data)
+            self.ax.set_ylim3d(ylim[0] + dy_data, ylim[1] + dy_data)
+            self.ax.set_zlim3d(zlim)
+        else:
+            self.ax.set_xlim(xlim[0] + dx_data, xlim[1] + dx_data)
+            self.ax.set_ylim(ylim[0] + dy_data, ylim[1] + dy_data)
+
+        self._view_initialized = True
+        self.fig.canvas.draw_idle()
+
     def _register_hover_artist(self, artist, anchor, text):
         """Registers a node marker for hover hit-testing."""
         self._node_hover_artists.append(artist)
@@ -353,7 +445,8 @@ class Visualization:
         self.ax.set_aspect("equal")
         self.ax.set_xlabel("X")
         self.ax.set_ylabel("Y")
-        node_positions = np.array([node.position for node in self.tensegrity.nodes], dtype=float)
+        node_positions = np.array([node.position[:2] for node in self.tensegrity.nodes], dtype=float)
+        self._current_plot_positions = node_positions
         # Use the first node in the YAML as the reference x for shading
         if len(self.tensegrity.nodes) > 0:
             ref_x = float(self.tensegrity.nodes[0].position[0])
@@ -420,7 +513,8 @@ class Visualization:
         self._refresh_hover_targets_2d()
 
 
-        self.fig.show()
+        if self.auto_show:
+            self.fig.show()
 
     def _plot_3d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
         """
@@ -452,6 +546,7 @@ class Visualization:
         self._hover_transform = transform
 
         node_positions = np.array([transform(*node.position) for node in self.tensegrity.nodes], dtype=float)
+        self._current_plot_positions = node_positions
         # Use the first node in the YAML (transformed) as the reference x for shading
         if len(self.tensegrity.nodes) > 0:
             ref_x = float(transform(*self.tensegrity.nodes[0].position)[0])
@@ -554,7 +649,8 @@ class Visualization:
             self._set_initial_view(node_positions)
         self._view_initialized = True
         self._refresh_hover_targets_3d(transform)
-        self.fig.show()
+        if self.auto_show:
+            self.fig.show()
 
     def set_3d_equal_scaling(self, ax):
         """

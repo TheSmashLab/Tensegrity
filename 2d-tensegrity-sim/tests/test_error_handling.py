@@ -145,10 +145,15 @@ def test_solver_returns_failure_result_without_updating_positions(monkeypatch):
     tensegrity = Tensegrity([node1, node2], [connection])
     original_positions = [node.position.copy() for node in tensegrity.nodes]
 
-    def fail_root(*args, **kwargs):
-        return SimpleNamespace(success=False, message="forced failure", x=np.array([100.0, 100.0, 100.0, 100.0]))
+    def fail_least_squares(*args, **kwargs):
+        return SimpleNamespace(
+            success=False,
+            message="forced failure",
+            x=np.array([100.0, 100.0, 100.0, 100.0]),
+            fun=np.ones(4),
+        )
 
-    monkeypatch.setattr("TensegritySim.tensegrity_solver.root", fail_root)
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", fail_least_squares)
 
     result = TensegritySolver(tensegrity, dim=2).solve()
 

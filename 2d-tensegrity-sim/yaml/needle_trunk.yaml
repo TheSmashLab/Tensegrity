@@ -148,6 +148,6 @@ builders:
   strings:
     stiffness: 100
     type: string
-    initial_length_ratio: 0.9
+    initial_length_ratio: 0.90
 control:
 - String1
