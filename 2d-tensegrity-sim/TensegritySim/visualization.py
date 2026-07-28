@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 from mpl_toolkits import mplot3d
 from mpl_toolkits.mplot3d import proj3d
 from .data_structures import Tensegrity, Connection
@@ -67,7 +68,13 @@ class Visualization:
                 # store by object id so we can match the exact Connection instances
                 self.control_colors[id(control)] = cmap(float(i) / max(1, n - 1))
 
-    def plot(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
+    def plot(
+        self,
+        label_nodes: bool = False,
+        label_connections: bool = False,
+        label_forces: bool = False,
+        color_by_force: bool = True,
+    ):
         """
         Plots the visualization of the tensegrity structure.
 
@@ -75,11 +82,12 @@ class Visualization:
             label_nodes (bool): Whether to label the node names in the plot. Default is False.
             label_connections (bool): Whether to label the connection names in the plot. Default is False.
             label_forces (bool): Whether to label the forces on the connections. Default is False.
+            color_by_force (bool): Whether to color members by axial force. Default is True.
         """
         if self.dim == 3:
-            self._plot_3d(label_nodes, label_connections, label_forces)
+            self._plot_3d(label_nodes, label_connections, label_forces, color_by_force)
         else:
-            self._plot_2d(label_nodes, label_connections, label_forces)
+            self._plot_2d(label_nodes, label_connections, label_forces, color_by_force)
 
     @staticmethod
     def _grayscale_from_distance(distance: float, min_distance: float, max_distance: float) -> tuple:
@@ -100,6 +108,50 @@ class Visualization:
             normalized_distance = float(np.clip((distance - min_distance) / (max_distance - min_distance), 0.0, 1.0))
             shade = 0.18 + 0.62 * normalized_distance
         return (shade, shade, shade, 1.0)
+
+    @staticmethod
+    def _force_color(connection: Connection, max_abs_force: float, force_tol: float = 1e-8) -> tuple:
+        """Maps connection force to a plot color."""
+        force = 0.0 if connection.force is None else float(connection.force)
+        if abs(force) <= force_tol or max_abs_force <= force_tol:
+            return (0.62, 0.65, 0.69, 0.62)
+
+        magnitude = float(np.clip(abs(force) / max_abs_force, 0.0, 1.0))
+        intensity = 0.28 + 0.72 * magnitude
+        neutral = np.array([0.72, 0.76, 0.82, 1.0])
+        if force >= 0:
+            target = np.array([0.05, 0.42, 0.92, 1.0])
+        else:
+            target = np.array([0.91, 0.22, 0.08, 1.0])
+        return tuple(neutral * (1.0 - intensity) + target * intensity)
+
+    @staticmethod
+    def _force_linewidth(connection: Connection) -> float:
+        """Returns a line width that makes control members stand out slightly."""
+        return 2.8 if connection.name else 2.0
+
+    def _connection_color(
+        self,
+        connection: Connection,
+        fallback_color: tuple,
+        max_abs_force: float,
+        color_by_force: bool,
+    ) -> tuple:
+        """Chooses the displayed color for a connection."""
+        if color_by_force:
+            return self._force_color(connection, max_abs_force)
+        return self.control_colors.get(id(connection), fallback_color)
+
+    def _draw_force_legend(self, color_by_force: bool) -> None:
+        """Draws a compact legend for the force color scheme."""
+        if not color_by_force or not self.tensegrity.connections:
+            return
+        handles = [
+            Line2D([0], [0], color=(0.05, 0.42, 0.92, 1.0), linewidth=2.5, label="Tension"),
+            Line2D([0], [0], color=(0.91, 0.22, 0.08, 1.0), linewidth=2.5, label="Compression"),
+            Line2D([0], [0], color=(0.62, 0.65, 0.69, 0.62), linestyle=":", linewidth=2.5, label="Slack / zero"),
+        ]
+        self.ax.legend(handles=handles, loc="upper right", framealpha=0.86, fontsize=8)
 
     @staticmethod
     def _camera_direction(elev: float, azim: float) -> np.ndarray:
@@ -427,7 +479,13 @@ class Visualization:
             self._hover_annotation.set_visible(False)
             self.fig.canvas.draw()
 
-    def _plot_2d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
+    def _plot_2d(
+        self,
+        label_nodes: bool = False,
+        label_connections: bool = False,
+        label_forces: bool = False,
+        color_by_force: bool = True,
+    ):
         """
         Plots the 2D visualization of the tensegrity structure.
 
@@ -435,6 +493,7 @@ class Visualization:
             label_nodes (bool): Whether to label the node names in the plot. Default is False.
             label_connections (bool): Whether to label the connection names in the plot. Default is False.
             label_forces (bool): Whether to label the forces on the connections. Default is False.
+            color_by_force (bool): Whether to color members by axial force. Default is True.
         """
         view_state = self._capture_view_state()
         self.ax.clear()
@@ -458,26 +517,28 @@ class Visualization:
         node_depth_max = float(np.max(node_depths)) if len(node_depths) else 1.0
         connection_depth_min = float(np.min(connection_depths)) if len(connection_depths) else 0.0
         connection_depth_max = float(np.max(connection_depths)) if len(connection_depths) else 1.0
+        connection_forces = np.array(
+            [0.0 if connection.force is None else float(connection.force) for connection in self.tensegrity.connections],
+            dtype=float,
+        )
+        max_abs_force = float(np.max(np.abs(connection_forces))) if len(connection_forces) else 0.0
 
         # --- Plot connections ---
         for connection_index, connection in enumerate(self.tensegrity.connections):
             color = self._grayscale_from_distance(connection_depths[connection_index], connection_depth_min, connection_depth_max)
+            plot_color = self._connection_color(connection, color, max_abs_force, color_by_force)
+            linewidth = self._force_linewidth(connection)
             # Strings are dashed lines
             if connection.connection_type == Connection.ConnectionType.STRING:
                 style = "--" if connection.force > 1e-3 else ":"
-                # use control color if this connection is a control
-                if id(connection) in self.control_colors:
-                    plot_color = self.control_colors[id(connection)]
-                else:
-                    plot_color = color
                 # Plot line
-                self.ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], linestyle=style, color=plot_color)
+                self.ax.plot([node.position[0] for node in connection.nodes], [node.position[1] for node in connection.nodes], linestyle=style, color=plot_color, linewidth=linewidth)
 
 
             # Bars are solid lines
             elif connection.connection_type == Connection.ConnectionType.BAR:
                 style = "-" if np.abs(connection.force) > 1e-3 else "-."
-                self.ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], linestyle=style, color=color)
+                self.ax.plot([connection.nodes[0].position[0], connection.nodes[1].position[0]], [connection.nodes[0].position[1], connection.nodes[1].position[1]], linestyle=style, color=plot_color, linewidth=linewidth)
 
         # --- plot nodes as points; labels are optional ---
         for node_index, node in enumerate(self.tensegrity.nodes):
@@ -506,6 +567,7 @@ class Visualization:
                 if connection.name:
                     self.ax.annotate(connection.name, ((connection.nodes[0].position[0] + connection.nodes[1].position[0])/2, (connection.nodes[0].position[1] + connection.nodes[1].position[1])/2), ha="center")
 
+        self._draw_force_legend(color_by_force)
         self._restore_view_state(view_state)
         if view_state is None:
             self._set_initial_view(node_positions)
@@ -516,7 +578,13 @@ class Visualization:
         if self.auto_show:
             self.fig.show()
 
-    def _plot_3d(self, label_nodes: bool = False, label_connections: bool = False, label_forces: bool = False):
+    def _plot_3d(
+        self,
+        label_nodes: bool = False,
+        label_connections: bool = False,
+        label_forces: bool = False,
+        color_by_force: bool = True,
+    ):
         """
         Plots the 3D visualization of the tensegrity structure.
 
@@ -524,6 +592,7 @@ class Visualization:
             label_nodes (bool): Whether to label the node names in the plot. Default is False.
             label_connections (bool): Whether to label the connection names in the plot. Default is False.
             label_forces (bool): Whether to label the forces on the connections. Default is False.
+            color_by_force (bool): Whether to color members by axial force. Default is True.
         """
         view_state = self._capture_view_state()
         self.ax.clear()
@@ -558,6 +627,11 @@ class Visualization:
         node_depth_max = float(np.max(node_depths)) if len(node_depths) else 1.0
         connection_depth_min = float(np.min(connection_depths)) if len(connection_depths) else 0.0
         connection_depth_max = float(np.max(connection_depths)) if len(connection_depths) else 1.0
+        connection_forces = np.array(
+            [0.0 if connection.force is None else float(connection.force) for connection in self.tensegrity.connections],
+            dtype=float,
+        )
+        max_abs_force = float(np.max(np.abs(connection_forces))) if len(connection_forces) else 0.0
 
         # --- plot nodes as points; labels are optional ---
         for node_index, node in enumerate(self.tensegrity.nodes):
@@ -578,6 +652,8 @@ class Visualization:
         # --- Plot connections ---
         for connection_index, connection in enumerate(self.tensegrity.connections):
             color = self._grayscale_from_distance(connection_depths[connection_index], connection_depth_min, connection_depth_max)
+            plot_color = self._connection_color(connection, color, max_abs_force, color_by_force)
+            linewidth = self._force_linewidth(connection)
             # Strings are dashed lines
             if connection.connection_type == Connection.ConnectionType.STRING:
                 style = "--" if connection.force > 1e-3 else ":"
@@ -592,12 +668,10 @@ class Visualization:
                         x_values = connection.nodes[i].position[0] + t_values*(connection.nodes[i+1].position[0] - connection.nodes[i].position[0])
                         y_values = connection.nodes[i].position[1] + t_values*(connection.nodes[i+1].position[1] - connection.nodes[i].position[1])
                         positions = transform(x_values, y_values)
-                        plot_color = self.control_colors.get(id(connection), color)
-                        self.ax.plot3D(positions[0], positions[1], positions[2], linestyle=style, color=plot_color)
+                        self.ax.plot3D(positions[0], positions[1], positions[2], linestyle=style, color=plot_color, linewidth=linewidth)
                 else:
                     positions = [transform(node.position[0], node.position[1], node.position[2]) for node in connection.nodes]
-                    plot_color = self.control_colors.get(id(connection), color)
-                    self.ax.plot3D([pos[0] for pos in positions], [pos[1] for pos in positions], [pos[2] for pos in positions], linestyle=style, color=plot_color)
+                    self.ax.plot3D([pos[0] for pos in positions], [pos[1] for pos in positions], [pos[2] for pos in positions], linestyle=style, color=plot_color, linewidth=linewidth)
 
             # Bars are solid lines
             elif connection.connection_type == Connection.ConnectionType.BAR:
@@ -608,7 +682,7 @@ class Visualization:
                     y_values = connection.nodes[i].position[1] + t_values*(connection.nodes[i+1].position[1] - connection.nodes[i].position[1])
                     z_values = connection.nodes[i].position[2] + t_values*(connection.nodes[i+1].position[2] - connection.nodes[i].position[2])
                     positions = transform(x_values, y_values, z_values)
-                    self.ax.plot3D(positions[0], positions[1], positions[2], linestyle=style, color=color)
+                    self.ax.plot3D(positions[0], positions[1], positions[2], linestyle=style, color=plot_color, linewidth=linewidth)
 
         # --- label ---
         if label_forces:
@@ -643,6 +717,7 @@ class Visualization:
                 y_grid = r*np.sin(theta_grid)
                 self.ax.plot_surface(x_grid, y_grid, z_grid, alpha=0.25, color="gray")
 
+        self._draw_force_legend(color_by_force)
         self.set_3d_equal_scaling(self.ax)
         self._restore_view_state(view_state)
         if view_state is None:

@@ -27,6 +27,7 @@ class SimulationUI:
         self._last_snapshot = None
 
         self.show_forces_var = tk.BooleanVar(value=False)
+        self.force_coloring_var = tk.BooleanVar(value=True)
         self.show_connections_var = tk.BooleanVar(value=True)
         self.show_nodes_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value="Ready")
@@ -139,9 +140,10 @@ class SimulationUI:
         ttk.Label(parent, text="Display", style="PanelHeader.TLabel").grid(row=4, column=0, sticky="w")
         display = ttk.Frame(parent)
         display.grid(row=5, column=0, sticky="ew", pady=(6, 12))
-        ttk.Checkbutton(display, text="Forces", variable=self.show_forces_var, command=self.render).grid(row=0, column=0, sticky="w")
-        ttk.Checkbutton(display, text="Connection names", variable=self.show_connections_var, command=self.render).grid(row=1, column=0, sticky="w")
-        ttk.Checkbutton(display, text="Node names", variable=self.show_nodes_var, command=self.render).grid(row=2, column=0, sticky="w")
+        ttk.Checkbutton(display, text="Force colors", variable=self.force_coloring_var, command=self.render).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(display, text="Force labels", variable=self.show_forces_var, command=self.render).grid(row=1, column=0, sticky="w")
+        ttk.Checkbutton(display, text="Connection names", variable=self.show_connections_var, command=self.render).grid(row=2, column=0, sticky="w")
+        ttk.Checkbutton(display, text="Node names", variable=self.show_nodes_var, command=self.render).grid(row=3, column=0, sticky="w")
 
     def _build_view_panel(self, parent) -> None:
         ttk.Separator(parent).grid(row=6, column=0, sticky="ew", pady=(4, 10))
@@ -276,6 +278,7 @@ class SimulationUI:
             label_nodes=self.show_nodes_var.get(),
             label_connections=self.show_connections_var.get(),
             label_forces=self.show_forces_var.get(),
+            color_by_force=self.force_coloring_var.get(),
         )
         self.canvas.draw_idle()
         self._update_position_text()
