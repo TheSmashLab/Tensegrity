@@ -98,6 +98,29 @@ def test_bar_connection_energy_derivative_points_along_connection_axis():
     )
 
 
+def test_sparse_analytic_jacobian_matches_finite_difference():
+    tensegrity, _ = _two_node_tensegrity(
+        connection_type=Connection.ConnectionType.BAR,
+        initial_length=1.0,
+    )
+    tensegrity.pins = {"A": [True, True, False]}
+    solver = TensegritySolver(tensegrity, dim=2)
+    x = np.array([2.0, 0.2])
+    step = 1e-6
+    numeric = np.column_stack(
+        [
+            (
+                solver._objective(x + step * np.eye(len(x))[column])
+                - solver._objective(x - step * np.eye(len(x))[column])
+            )
+            / (2 * step)
+            for column in range(len(x))
+        ]
+    )
+
+    np.testing.assert_allclose(solver._jacobian(x).toarray(), numeric, rtol=1e-6, atol=1e-7)
+
+
 def test_multinode_connection_length_sums_adjacent_segments():
     node_a = Node("A", [0.0, 0.0, 0.0])
     node_b = Node("B", [3.0, 4.0, 0.0])
@@ -222,3 +245,27 @@ def test_solve_retries_and_accepts_non_null_force_solution(monkeypatch):
 
     assert result.success
     np.testing.assert_allclose(tensegrity.nodes[1].position, np.array([1.25, 0.0, 0.0]))
+
+
+def test_solve_refreshes_cached_control_length_before_optimization(monkeypatch):
+    tensegrity, connection = _two_node_tensegrity(
+        connection_type=Connection.ConnectionType.BAR,
+        initial_length=2.0,
+    )
+    tensegrity.pins = {"A": [True, True, False]}
+    tensegrity.controls = [connection]
+    solver = TensegritySolver(tensegrity, dim=2)
+    observed_residuals = []
+
+    def observing_least_squares(fun, x0, **kwargs):
+        observed_residuals.append(fun(x0).copy())
+        return SimpleNamespace(success=True, message="ok", x=x0, fun=fun(x0))
+
+    monkeypatch.setattr("TensegritySim.tensegrity_solver.least_squares", observing_least_squares)
+
+    assert solver.solve(attempts=1).success
+    connection.initial_length = 1.0
+    solver.solve(attempts=1)
+
+    np.testing.assert_allclose(observed_residuals[0], np.zeros(2))
+    assert np.linalg.norm(observed_residuals[1]) > 0

@@ -1,0 +1,15 @@
+nodes:
+  (0 0 0): [0.0, 0.0, 0.0]
+  (1 0 0): [1.0, 0.0, 0.0]
+connections:
+  bars: []
+  strings:
+  - [(0 0 0), (1 0 0)]
+builders:
+  bars:
+    stiffness: 1000
+    type: bar
+  strings:
+    stiffness: 100
+    type: string
+    initial_length_ratio: 0.95

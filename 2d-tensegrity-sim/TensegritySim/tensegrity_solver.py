@@ -2,6 +2,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Dict
 from scipy.optimize import least_squares, root
+from scipy.sparse import coo_matrix, lil_matrix, vstack
 
 from .data_structures import Connection, Tensegrity
 
@@ -42,6 +43,123 @@ class TensegritySolver:
         self.node_indices = {node.name: i for i, node in enumerate(self.tensegrity.nodes)}
 
         self.forces = np.zeros(self.dim*len(self.tensegrity.nodes))
+        self._initialize_topology()
+
+    def _initialize_topology(self) -> None:
+        """Cache fixed topology and coordinate mappings used by every residual call."""
+        self._coordinate_count = self.dim * len(self.tensegrity.nodes)
+        self._pinned_values = np.array(
+            [node.position[:self.dim] for node in self.tensegrity.nodes],
+            dtype=float,
+        ).reshape(-1)
+        self._free_mask = np.ones(self._coordinate_count, dtype=bool)
+        for node, pinned_dimensions in self.tensegrity.pins.items():
+            node_index = self.node_indices[node]
+            for dimension in range(self.dim):
+                if pinned_dimensions[dimension]:
+                    self._free_mask[node_index * self.dim + dimension] = False
+        self._free_indices = np.flatnonzero(self._free_mask)
+        self._free_column = {
+            coordinate: column for column, coordinate in enumerate(self._free_indices)
+        }
+
+        linked_nodes = self.tensegrity.surface.linked_nodes if self.tensegrity.surface else []
+        self._linked_edges = {frozenset(pair) for pair in linked_nodes}
+        self._surface_pairs = [
+            (self.node_indices[node1], self.node_indices[node2])
+            for node1, node2 in linked_nodes
+        ]
+        self._has_cylinder_constraints = bool(
+            self.tensegrity.surface
+            and self.tensegrity.surface.shape["surface_type"] == "cylinder"
+        )
+
+        self._connection_indices = []
+        self._connection_seam_segments = []
+        for connection in self.tensegrity.connections:
+            indices = np.fromiter(
+                (self.node_indices[node.name] for node in connection.nodes),
+                dtype=np.intp,
+            )
+            self._connection_indices.append(indices)
+            self._connection_seam_segments.append(
+                np.array(
+                    [
+                        frozenset((connection.nodes[i].name, connection.nodes[i + 1].name))
+                        in self._linked_edges
+                        for i in range(len(connection.nodes) - 1)
+                    ],
+                    dtype=bool,
+                )
+            )
+        self._segment_starts = np.concatenate(
+            [indices[:-1] for indices in self._connection_indices]
+        ) if self._connection_indices else np.array([], dtype=np.intp)
+        self._segment_ends = np.concatenate(
+            [indices[1:] for indices in self._connection_indices]
+        ) if self._connection_indices else np.array([], dtype=np.intp)
+        self._segment_connections = np.concatenate(
+            [
+                np.full(len(indices) - 1, connection_index, dtype=np.intp)
+                for connection_index, indices in enumerate(self._connection_indices)
+            ]
+        ) if self._connection_indices else np.array([], dtype=np.intp)
+        self._seam_segment_mask = np.concatenate(
+            self._connection_seam_segments
+        ) if self._connection_seam_segments else np.array([], dtype=bool)
+        self._connection_stiffness = np.array(
+            [connection.stiffness for connection in self.tensegrity.connections],
+            dtype=float,
+        )
+        self._connection_initial_lengths = np.array(
+            [connection.initial_length for connection in self.tensegrity.connections],
+            dtype=float,
+        )
+        self._string_connections = np.array(
+            [
+                connection.connection_type == Connection.ConnectionType.STRING
+                for connection in self.tensegrity.connections
+            ],
+            dtype=bool,
+        )
+        self._two_node_connection_ids = np.array(
+            [
+                index
+                for index, indices in enumerate(self._connection_indices)
+                if len(indices) == 2
+            ],
+            dtype=np.intp,
+        )
+        self._polyline_connection_ids = np.array(
+            [
+                index
+                for index, indices in enumerate(self._connection_indices)
+                if len(indices) != 2
+            ],
+            dtype=np.intp,
+        )
+
+        self._residual_keep_indices, self._surface_merges = self._build_residual_mapping()
+
+    def _build_residual_mapping(self):
+        delete_indices = set(np.flatnonzero(~self._free_mask))
+        merges = []
+        for node1, node2 in self._surface_pairs:
+            for dimension in range(min(2, self.dim)):
+                index1 = node1 * self.dim + dimension
+                index2 = node2 * self.dim + dimension
+                if index1 in delete_indices:
+                    delete_indices.add(index2)
+                elif index2 in delete_indices:
+                    delete_indices.add(index1)
+                else:
+                    merges.append((index1, index2))
+                    delete_indices.add(index2)
+        keep = np.array(
+            [i for i in range(self._coordinate_count) if i not in delete_indices],
+            dtype=np.intp,
+        )
+        return keep, merges
 
     def set_forces(self, forces: Dict[str, np.ndarray]) -> None:
         """
@@ -92,6 +210,9 @@ class TensegritySolver:
         Returns:
             SolverResult. On success, changes are made internally to the Tensegrity object.
         """
+        # Controls can change member rest lengths between interactive solves.
+        # Refresh mutable mechanical properties before evaluating the next state.
+        self._refresh_connection_parameters()
         if method != "least_squares":
             return self._solve_with_root(method, force_tol, max_zero_force_fraction)
 
@@ -103,12 +224,17 @@ class TensegritySolver:
         guesses = self._create_initial_guesses(x0, attempts, perturbation, random_seed)
         best_result = None
         best_residual_norm = np.inf
+        residual_count = len(self._objective(x0))
+        use_dense_lm = residual_count >= len(x0) and len(x0) <= 500
+        least_squares_method = "lm" if use_dense_lm else "trf"
+        jacobian = self._dense_jacobian if use_dense_lm else self._jacobian
 
         for guess in guesses:
             result = least_squares(
                 self._objective,
                 guess,
-                method="trf",
+                jac=jacobian,
+                method=least_squares_method,
                 x_scale="jac",
                 max_nfev=5000,
             )
@@ -142,6 +268,14 @@ class TensegritySolver:
             message = f"Solver could not converge: residual norm {best_residual_norm:.3e}; {best_result.message}"
 
         return SolverResult(False, message, best_result)
+
+    def _refresh_connection_parameters(self) -> None:
+        self._connection_stiffness[:] = [
+            connection.stiffness for connection in self.tensegrity.connections
+        ]
+        self._connection_initial_lengths[:] = [
+            connection.initial_length for connection in self.tensegrity.connections
+        ]
 
     def _solve_with_root(self, method: str, force_tol: float, max_zero_force_fraction: float) -> SolverResult:
         x0 = self._create_initial_guess()
@@ -268,55 +402,217 @@ class TensegritySolver:
             np.ndarray: The objective function value, which is the virtual work with optional surface constraints.
         """
         N = self._get_nodes_from_input(x)
+        virtual_work = np.zeros((len(self.tensegrity.nodes), self.dim))
 
-        virtual_work = np.zeros(self.dim*len(self.tensegrity.nodes))
-
-        # Virtual work from potential energy
-        for connection in self.tensegrity.connections:
-            virtual_work += self._spring_connection_energy_derivative(connection, N)
+        # Calculate all segment geometry in one batch and scatter local contributions.
+        if len(self._segment_starts):
+            differences = N[self._segment_starts] - N[self._segment_ends]
+            segment_lengths = np.linalg.norm(differences, axis=1)
+            segment_lengths[self._seam_segment_mask] = 0.0
+            connection_lengths = np.bincount(
+                self._segment_connections,
+                weights=segment_lengths,
+                minlength=len(self.tensegrity.connections),
+            )
+            coefficients = -self._connection_stiffness * (
+                connection_lengths - self._connection_initial_lengths
+            )
+            slack_strings = (
+                self._string_connections
+                & (connection_lengths < self._connection_initial_lengths)
+            )
+            coefficients[slack_strings] = 0.0
+            directions = np.zeros_like(differences)
+            nonzero = segment_lengths > 0
+            directions[nonzero] = (
+                differences[nonzero] / segment_lengths[nonzero, np.newaxis]
+            )
+            contributions = coefficients[self._segment_connections, np.newaxis] * directions
+            np.add.at(virtual_work, self._segment_starts, contributions)
+            np.add.at(virtual_work, self._segment_ends, -contributions)
 
         # Virtual work from external forces
+        virtual_work = virtual_work.reshape(-1)
         virtual_work += self.forces
 
-        # delete the pinned nodes (those cannot be generalized coordinates)
-        delete_indices = set()
-        for node, bools in self.tensegrity.pins.items():
-            for i in range(self.dim):
-                if bools[i]:
-                    delete_indices.add(self.node_indices[node]*self.dim + i)
-
         if self.tensegrity.surface:
-            for node1, node2 in self.tensegrity.surface.linked_nodes:
-                if self.node_indices[node1]*self.dim in delete_indices:
-                    delete_indices.add(self.node_indices[node2]*self.dim)
-                elif self.node_indices[node2]*self.dim in delete_indices:
-                    delete_indices.add(self.node_indices[node1]*self.dim)
-                else:
-                    # Because the x-coords of linked nodes must be exactly the circumference of the cylinder apart
-                    # (N1[0] = N2[0] +/- C), the relationship is linear
-                    # therefore dV/dq_i = dV/dq_j for the x-coord of linked nodes i and j,
-                    # so we can add the virtual work of node2 in the x to node1 in the x
-                    # so it was as if we always had taken the derivative with respect to node1x where node2x is a function of node1x
-                    virtual_work[self.node_indices[node1]*self.dim] += virtual_work[self.node_indices[node2]*self.dim]
-                    delete_indices.add(self.node_indices[node2]*self.dim)
-
-                if self.node_indices[node1]*self.dim + 1 in delete_indices:
-                    delete_indices.add(self.node_indices[node2]*self.dim + 1)
-                elif self.node_indices[node2]*self.dim + 1 in delete_indices:
-                    delete_indices.add(self.node_indices[node1]*self.dim + 1)
-                else:
-                    # The y-coords of linked nodes must be the same, so we can add the virtual work of node2 in the y to node1 in the y
-                    virtual_work[self.node_indices[node1]*self.dim + 1] += virtual_work[self.node_indices[node2]*self.dim + 1]
-                    delete_indices.add(self.node_indices[node2]*self.dim + 1)
-
-            virtual_work = np.delete(virtual_work, sorted(delete_indices))
-
-            objective = np.append(virtual_work, self._surface_constraints(x))
+            for target, source in self._surface_merges:
+                virtual_work[target] += virtual_work[source]
+            objective = np.concatenate(
+                (virtual_work[self._residual_keep_indices], self._surface_constraints_from_nodes(N))
+            )
 
         else:
-            objective = np.delete(virtual_work, sorted(delete_indices))
+            objective = virtual_work[self._residual_keep_indices]
 
         return objective
+
+    def _jacobian(self, x: np.ndarray):
+        """Return the sparse analytic Jacobian of the equilibrium residual."""
+        N = self._get_nodes_from_input(x)
+        jacobian_rows = []
+        jacobian_columns = []
+        jacobian_values = []
+
+        # The overwhelmingly common two-node member has a compact 2x2 block
+        # structure, so assemble all such members without a Python connection loop.
+        two_node_ids = self._two_node_connection_ids
+        if len(two_node_ids):
+            endpoints = np.array(
+                [self._connection_indices[index] for index in two_node_ids],
+                dtype=np.intp,
+            )
+            differences = N[endpoints[:, 0]] - N[endpoints[:, 1]]
+            lengths = np.linalg.norm(differences, axis=1)
+            seam_edges = np.array(
+                [self._connection_seam_segments[index][0] for index in two_node_ids],
+                dtype=bool,
+            )
+            lengths[seam_edges] = 0.0
+            directions = np.zeros_like(differences)
+            nonzero = lengths > 0
+            directions[nonzero] = differences[nonzero] / lengths[nonzero, np.newaxis]
+            outer_directions = np.einsum("mi,mj->mij", directions, directions)
+            stiffness = self._connection_stiffness[two_node_ids]
+            coefficient = -stiffness * (
+                lengths - self._connection_initial_lengths[two_node_ids]
+            )
+            active = nonzero & ~(
+                self._string_connections[two_node_ids]
+                & (lengths < self._connection_initial_lengths[two_node_ids])
+            )
+            transverse = np.zeros_like(outer_directions)
+            transverse[active] = (
+                np.eye(self.dim)[np.newaxis, :, :] - outer_directions[active]
+            ) / lengths[active, np.newaxis, np.newaxis]
+            blocks = (
+                -stiffness[:, np.newaxis, np.newaxis] * outer_directions
+                + coefficient[:, np.newaxis, np.newaxis] * transverse
+            )
+            blocks[~active] = 0.0
+            coordinates = endpoints[:, :, np.newaxis] * self.dim + np.arange(self.dim)
+            for row_endpoint, column_endpoint, sign in (
+                (0, 0, 1.0),
+                (0, 1, -1.0),
+                (1, 0, -1.0),
+                (1, 1, 1.0),
+            ):
+                rows = np.broadcast_to(
+                    coordinates[:, row_endpoint, :, np.newaxis],
+                    blocks.shape,
+                )
+                columns = np.broadcast_to(
+                    coordinates[:, column_endpoint, np.newaxis, :],
+                    blocks.shape,
+                )
+                jacobian_rows.extend(rows.ravel())
+                jacobian_columns.extend(columns.ravel())
+                jacobian_values.extend((sign * blocks).ravel())
+
+        # Multi-segment members require coupling all their segment directions.
+        for connection_index in self._polyline_connection_ids:
+            connection = self.tensegrity.connections[connection_index]
+            indices = self._connection_indices[connection_index]
+            seam_segments = self._connection_seam_segments[connection_index]
+            local_size = len(indices) * self.dim
+            length_gradient = np.zeros(local_size)
+            length_hessian = np.zeros((local_size, local_size))
+            total_length = 0.0
+
+            for segment in range(len(indices) - 1):
+                if seam_segments[segment]:
+                    continue
+                difference = N[indices[segment]] - N[indices[segment + 1]]
+                segment_length = float(np.linalg.norm(difference))
+                if segment_length == 0.0:
+                    continue
+                total_length += segment_length
+                direction = difference / segment_length
+                first = slice(segment * self.dim, (segment + 1) * self.dim)
+                second = slice((segment + 1) * self.dim, (segment + 2) * self.dim)
+                length_gradient[first] += direction
+                length_gradient[second] -= direction
+                curvature = (
+                    np.eye(self.dim) - np.outer(direction, direction)
+                ) / segment_length
+                length_hessian[first, first] += curvature
+                length_hessian[second, second] += curvature
+                length_hessian[first, second] -= curvature
+                length_hessian[second, first] -= curvature
+
+            if (
+                connection.connection_type == Connection.ConnectionType.STRING
+                and total_length < connection.initial_length
+            ):
+                continue
+
+            coefficient = -connection.stiffness * (
+                total_length - connection.initial_length
+            )
+            local_jacobian = (
+                -connection.stiffness
+                * np.outer(length_gradient, length_gradient)
+                + coefficient * length_hessian
+            )
+            coordinates = np.array(
+                [
+                    int(node_index) * self.dim + dimension
+                    for node_index in indices
+                    for dimension in range(self.dim)
+                ],
+                dtype=np.intp,
+            )
+            local_rows, local_columns = np.nonzero(local_jacobian)
+            jacobian_rows.extend(coordinates[local_rows])
+            jacobian_columns.extend(coordinates[local_columns])
+            jacobian_values.extend(local_jacobian[local_rows, local_columns])
+
+        full_jacobian = coo_matrix(
+            (jacobian_values, (jacobian_rows, jacobian_columns)),
+            shape=(self._coordinate_count, self._coordinate_count),
+            dtype=float,
+        ).tocsr()
+        if self._surface_merges:
+            full_jacobian = full_jacobian.tolil()
+            for target, source in self._surface_merges:
+                full_jacobian[target, :] += full_jacobian[source, :]
+            full_jacobian = full_jacobian.tocsr()
+
+        equilibrium_jacobian = full_jacobian[
+            self._residual_keep_indices, :
+        ][:, self._free_indices]
+        if not self._has_cylinder_constraints:
+            return equilibrium_jacobian
+
+        constraint_jacobian = lil_matrix(
+            (2 * len(self._surface_pairs), len(self._free_indices)),
+            dtype=float,
+        )
+        row = 0
+        for node1, node2 in self._surface_pairs:
+            y1 = self._free_column.get(node1 * self.dim + 1)
+            y2 = self._free_column.get(node2 * self.dim + 1)
+            if y1 is not None:
+                constraint_jacobian[row, y1] = 1.0
+            if y2 is not None:
+                constraint_jacobian[row, y2] = -1.0
+            row += 1
+
+            difference = N[node1, 0] - N[node2, 0]
+            sign = np.sign(difference)
+            x1 = self._free_column.get(node1 * self.dim)
+            x2 = self._free_column.get(node2 * self.dim)
+            if x1 is not None:
+                constraint_jacobian[row, x1] = sign
+            if x2 is not None:
+                constraint_jacobian[row, x2] = -sign
+            row += 1
+
+        return vstack((equilibrium_jacobian, constraint_jacobian.tocsr()), format="csr")
+
+    def _dense_jacobian(self, x: np.ndarray) -> np.ndarray:
+        """Dense Jacobian adapter for the fast moderate-sized LM solve path."""
+        return self._jacobian(x).toarray()
 
     def _spring_connection_energy(self, connection: Connection, N: np.ndarray) -> float:
         """
@@ -448,14 +744,15 @@ class TensegritySolver:
                         - The y-coordinates of linked nodes are equal.
                         - The x-coordinates of linked nodes are exactly the circumference of the cylinder apart.
         """
-        N = self._get_nodes_from_input(x)
+        return self._surface_constraints_from_nodes(self._get_nodes_from_input(x))
 
+    def _surface_constraints_from_nodes(self, N: np.ndarray) -> np.ndarray:
         constraints = []
         if self.tensegrity.surface.shape["surface_type"] == "cylinder":
             r = self.tensegrity.surface.shape["properties"]["radius"]
-            for node1, node2 in self.tensegrity.surface.linked_nodes:
-                N1 = N[self.node_indices[node1]]
-                N2 = N[self.node_indices[node2]]
+            for node1, node2 in self._surface_pairs:
+                N1 = N[node1]
+                N2 = N[node2]
                 constraints.append(N1[1] - N2[1]) # y values must be the same
                 constraints.append(np.abs(N1[0] - N2[0]) - 2*np.pi*r) # x values must be exactly the circumference of the cylinder apart
 
@@ -470,11 +767,11 @@ class TensegritySolver:
             np.ndarray: The input vector x0. 
                         length = d*len(nodes) - pins, Elements are the node positions (except those that are pinned)
         """
-        x0 = np.array([node.position[:self.dim] for node in self.tensegrity.nodes]).flatten() # position of the nodes
-
-        x0 = np.delete(x0, [self.node_indices[node]*self.dim + i for node, bools in self.tensegrity.pins.items() for i in range(self.dim) if bools[i]])
-
-        return x0
+        positions = np.array(
+            [node.position[:self.dim] for node in self.tensegrity.nodes],
+            dtype=float,
+        ).reshape(-1)
+        return positions[self._free_indices]
 
     def _get_nodes_from_input(self, x: np.ndarray) -> np.ndarray:
         """
@@ -486,15 +783,6 @@ class TensegritySolver:
         Returns:
             np.ndarray: The extracted node positions including those removed from the input because they were pinned.
         """
-        ins_index = {}
-        for node, bools in self.tensegrity.pins.items():
-            index = self.node_indices[node]*self.dim
-            for i in range(self.dim):
-                if bools[i]:
-                    ins_index[index + i] = self.tensegrity.nodes[self.node_indices[node]].position[i]
-        for index, value in sorted(ins_index.items()):
-            x = np.insert(x, index, value)
-
-        x = x.reshape(-1, self.dim)
-
-        return x
+        coordinates = self._pinned_values.copy()
+        coordinates[self._free_indices] = x
+        return coordinates.reshape(-1, self.dim)

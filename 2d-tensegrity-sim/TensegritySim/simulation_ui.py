@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import numpy as np
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from .data_structures import Tensegrity
@@ -19,6 +20,8 @@ class SimulationUI:
         self.root.title(title)
         self.root.geometry("1220x780")
         self.root.minsize(980, 620)
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self._closed = False
 
         self.solver = TensegritySolver(self.tensegrity, dim=self.dim)
         self.viz = Visualization(self.tensegrity, dim=self.dim, auto_show=False)
@@ -45,6 +48,17 @@ class SimulationUI:
         """Starts the Tk event loop."""
         self.root.mainloop()
         return 0
+
+    def close(self) -> None:
+        """Close the visualization and terminate its Tk event loop."""
+        if self._closed:
+            return
+        self._closed = True
+        plt.close(self.viz.fig)
+        try:
+            self.root.quit()
+        finally:
+            self.root.destroy()
 
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
@@ -133,7 +147,7 @@ class SimulationUI:
         ttk.Button(frame, text="+", width=3, command=lambda index=row: self._step_control(index, 1)).grid(row=1, column=2, sticky="e")
         entry = ttk.Entry(frame, textvariable=var, width=10)
         entry.grid(row=2, column=1, sticky="e", pady=(2, 0))
-        ttk.Label(frame, text="pending delta").grid(row=2, column=0, sticky="w", pady=(2, 0))
+        ttk.Label(frame, text="offset from initial").grid(row=2, column=0, sticky="w", pady=(2, 0))
 
     def _build_display_panel(self, parent) -> None:
         ttk.Separator(parent).grid(row=3, column=0, sticky="ew", pady=(4, 10))
@@ -166,8 +180,8 @@ class SimulationUI:
         self.root.bind("<space>", lambda _event: self.apply_controls())
         self.root.bind("f", lambda _event: self.fit_view())
         self.root.bind("F", lambda _event: self.fit_view())
-        self.root.bind("q", lambda _event: self.root.destroy())
-        self.root.bind("Q", lambda _event: self.root.destroy())
+        self.root.bind("q", lambda _event: self.close())
+        self.root.bind("Q", lambda _event: self.close())
         self.viz.fig.canvas.mpl_connect("button_press_event", self._on_canvas_double_click)
 
     def _on_canvas_double_click(self, event) -> None:
@@ -208,15 +222,35 @@ class SimulationUI:
         for var in self.control_delta_vars:
             var.set(0.0)
 
+    def _current_control_offsets(self) -> list[float]:
+        return [
+            float(control.initial_length - starting_length)
+            for control, starting_length in zip(
+                self.tensegrity.controls,
+                self.tensegrity.control_starting_lengths,
+            )
+        ]
+
+    def _sync_control_vars_to_lengths(self) -> None:
+        for var, offset in zip(self.control_delta_vars, self._current_control_offsets()):
+            var.set(offset)
+
     def _update_pending_status(self) -> None:
         if not self.control_delta_vars:
             return
         try:
-            max_delta = max(abs(float(var.get())) for var in self.control_delta_vars)
+            requested_offsets = [float(var.get()) for var in self.control_delta_vars]
         except (tk.TclError, ValueError):
             self.status_var.set("Pending controls contain a nonnumeric value")
             return
-        if max_delta > 0:
+        changed = any(
+            not np.isclose(requested, current)
+            for requested, current in zip(
+                requested_offsets,
+                self._current_control_offsets(),
+            )
+        )
+        if changed:
             self.status_var.set("Pending control changes")
 
     def apply_controls(self) -> None:
@@ -227,15 +261,19 @@ class SimulationUI:
             self.status_var.set(str(exc))
             return
 
+        current_offsets = self._current_control_offsets()
+        incremental_changes = [
+            requested - current
+            for requested, current in zip(deltas, current_offsets)
+        ]
         snapshot = self._snapshot()
         self._last_snapshot = snapshot
-        if deltas:
-            self.tensegrity.change_control_lengths(*deltas)
+        if incremental_changes:
+            self.tensegrity.change_control_lengths(*incremental_changes)
         result = self.solve_and_render(reason="Applied controls")
-        if result.success:
-            self._reset_pending_deltas()
-        else:
+        if not result.success:
             self._restore_snapshot(snapshot)
+            self._sync_control_vars_to_lengths()
             self.render()
 
     def reset_controls(self) -> None:
@@ -257,6 +295,7 @@ class SimulationUI:
         current = self._snapshot()
         self._restore_snapshot(self._last_snapshot)
         self._last_snapshot = current
+        self._sync_control_vars_to_lengths()
         self.render()
         self.status_var.set("Undo restored previous state")
         self._update_stats(None)
